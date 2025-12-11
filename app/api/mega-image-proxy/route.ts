@@ -95,13 +95,15 @@ export async function GET(request: NextRequest) {
       }
 
       // Return image with proper headers
-      // Convert Buffer to ArrayBuffer for NextResponse
+      // Convert Buffer to Uint8Array for Response (BodyInit type)
+      // Use ArrayBuffer to ensure proper type compatibility
       const arrayBuffer = imageBuffer.buffer.slice(
         imageBuffer.byteOffset,
         imageBuffer.byteOffset + imageBuffer.byteLength
       )
+      const uint8Array = new Uint8Array(arrayBuffer)
       
-      return new NextResponse(arrayBuffer, {
+      return new Response(uint8Array, {
         status: 200,
         headers: {
           'Content-Type': contentType,

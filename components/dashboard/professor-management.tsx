@@ -364,16 +364,21 @@ export function ProfessorManagement({
     size = "small",
   }: { departmentName: string; className?: string; size?: "small" | "medium" | "large" }) => {
     const sizeClasses = {
-      small: "h-4 w-4", // Maliit na size
-      medium: "h-6 w-6", // Medium size
-      large: "h-16 w-16", // Malaking size
+      small: "text-sm", // Maliit na size
+      medium: "text-lg", // Medium size
+      large: "text-2xl sm:text-3xl", // Malaking size
     }
 
     const currentSize = sizeClasses[size] || sizeClasses.small
 
-    // Always use icon fallback - images are handled separately for uploaded images
-    // Use consistent Users icon with blue color for all departments
-    return <Users className={`${currentSize} ${className} text-blue-600`} />
+    // Show first letter of department name instead of icon
+    const firstLetter = departmentName.charAt(0).toUpperCase()
+    
+    return (
+      <span className={`${currentSize} ${className} font-bold text-blue-600`}>
+        {firstLetter}
+      </span>
+    )
   }
 
 
