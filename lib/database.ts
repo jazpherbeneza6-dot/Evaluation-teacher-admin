@@ -185,7 +185,7 @@ export const professorService = {
       password: string
       subjects?: string[] // Array of subjects (supports multiple subjects)
       subject?: string // Legacy single subject field for backward compatibility
-      subjectSections?: Array<{ subject: string; sections: string[] }> // Paired subjects with sections
+      subjectSections?: Array<{ subject: string; sections: string[]; course?: string }> // Paired subjects with sections and course handle
       handledSection?: string
     }>,
     onProgress?: (current: number, total: number) => void
@@ -455,7 +455,7 @@ export const professorService = {
   },
 
   // Update professor subject sections (subjects and their handled sections)
-  async updateSubjectSections(id: string, subjectSections: Array<{ subject: string; sections: string[] }>): Promise<void> {
+  async updateSubjectSections(id: string, subjectSections: Array<{ subject: string; sections: string[]; course?: string }>): Promise<void> {
     try {
       // Extract subjects array from subjectSections
       const subjects = subjectSections.map(ss => ss.subject)

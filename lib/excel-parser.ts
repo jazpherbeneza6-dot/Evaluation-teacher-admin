@@ -764,14 +764,16 @@ export async function parseExcelStudents(file: File): Promise<ExcelStudentParseR
 export type SubjectSection = {
   subject: string
   sections: string[] // Array of sections for this subject
+  course: string // Course handle for this subject (e.g., "BS Accounting Information System")
 }
 
 export type ParsedProfessor = {
   name: string
   department: string
   subjects: string[] // Array of subjects (for backward compatibility)
-  subjectSections: SubjectSection[] // Paired subjects with their sections
+  subjectSections: SubjectSection[] // Paired subjects with their sections and courses
   handledSection: string // Raw handled section string (for legacy support)
+  courses: string[] // Array of courses (for backward compatibility)
   email: string
   password: string
   rowIndex?: number
@@ -806,6 +808,17 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
     const departmentCol = findColumnIndex('DEPARTMENT')
     const subjectCol = findColumnIndex('SUBJECTS')
     const sectionCol = findColumnIndex('HANDLED SECTION')
+    // Try multiple header names for Course Handle (flexible matching)
+    let courseCol = findColumnIndex('COURSE HANDLE')
+    if (courseCol === -1) courseCol = findColumnIndex('COURSE')
+    if (courseCol === -1) courseCol = findColumnIndex('COUSE HANDLE') // common typo
+    if (courseCol === -1) {
+      // Fallback: find any header containing "course"
+      courseCol = sheet.headers.findIndex(header =>
+        header?.toString().toLowerCase().trim().includes('course')
+      )
+    }
+    console.log('Course Handle column index:', courseCol, '| Headers:', sheet.headers)
     const emailCol = findColumnIndex('GMAIL')
     const passwordCol = findColumnIndex('PASSWORD')
 
@@ -854,6 +867,8 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
         // Parse subjects and sections - match them by line number
         const rawSubject = subjectCol !== -1 ? (row[sheet.headers[subjectCol]]?.toString() || '') : ''
         const rawSection = sectionCol !== -1 ? (row[sheet.headers[sectionCol]]?.toString() || '') : ''
+        const rawCourse = courseCol !== -1 ? (row[sheet.headers[courseCol]]?.toString() || '') : ''
+        console.log(`Row ${rowIndex + 2}: rawCourse='${rawCourse}', courseCol=${courseCol}, header='${courseCol !== -1 ? sheet.headers[courseCol] : 'N/A'}'`)
 
         // Parse numbered items with format: "1. Item1" or "2. Item2"
         // Items are separated by line breaks
@@ -884,13 +899,17 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
 
         const subjectMap = parseNumberedItems(rawSubject)
         const sectionMap = parseNumberedItems(rawSection)
+        const courseMap = parseNumberedItems(rawCourse)
 
-        // Create subject-section pairs
+        console.log(`Row ${rowIndex + 2}: courseMap entries:`, Array.from(courseMap.entries()))
+
+        // Create subject-section-course triplets
         const subjectSections: SubjectSection[] = []
         const subjects: string[] = []
+        const courses: string[] = []
 
         // Get all unique keys from both maps
-        const allKeys = new Set([...subjectMap.keys(), ...sectionMap.keys()])
+        const allKeys = new Set([...subjectMap.keys(), ...sectionMap.keys(), ...courseMap.keys()])
         const sortedKeys = Array.from(allKeys).sort((a, b) => a - b)
 
         sortedKeys.forEach(num => {
@@ -898,9 +917,11 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
           if (subject) {
             subjects.push(subject)
             const sectionsStr = sectionMap.get(num) || ''
+            const course = courseMap.get(num) || ''
+            if (course) courses.push(course)
             // Parse sections - treat commas as separators (like line breaks)
             const sections = sectionsStr.split(/[,]/).map(s => s.trim()).filter(s => s.length > 0)
-            subjectSections.push({ subject, sections })
+            subjectSections.push({ subject, sections, course })
           }
         })
 
@@ -910,8 +931,9 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
           name,
           department,
           subjects, // Array of subjects
-          subjectSections, // Paired subjects with sections
+          subjectSections, // Paired subjects with sections and courses
           handledSection: rawSection.trim(), // Keep raw for legacy support
+          courses, // Array of courses
           email,
           password: password || 'Prof@1234', // Default password if not provided
           rowIndex: rowIndex + 2, // +2 because Excel rows are 1-indexed and we skip header

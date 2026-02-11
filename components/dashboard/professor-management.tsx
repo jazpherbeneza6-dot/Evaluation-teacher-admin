@@ -118,7 +118,7 @@ export function ProfessorManagement({
 
   // State variables para sa pag-edit ng subjects & sections
   const [isEditSubjectsDialogOpen, setIsEditSubjectsDialogOpen] = useState(false) // Para sa popup ng pag-edit ng subjects
-  const [editingSubjectSections, setEditingSubjectSections] = useState<Array<{ subject: string; sectionsText: string }>>([]) // Subjects at sections na ine-edit (sectionsText is raw text)
+  const [editingSubjectSections, setEditingSubjectSections] = useState<Array<{ subject: string; sectionsText: string; courseText: string }>>([]) // Subjects, sections, and course handle na ine-edit
   const [isSavingSubjects, setIsSavingSubjects] = useState(false) // Loading state para sa save
 
   // State variables para sa evaluation statistics (student count by section)
@@ -663,7 +663,8 @@ export function ProfessorManagement({
         .filter(ss => ss.subject.trim() !== '')
         .map(ss => ({
           subject: ss.subject,
-          sections: ss.sectionsText.split(',').map(s => s.trim()).filter(s => s)
+          sections: ss.sectionsText.split(',').map(s => s.trim()).filter(s => s),
+          course: ss.courseText?.trim() || ''
         }))
       if (validSubjectSections.length > 0) {
         await professorService.updateSubjectSections(editingProfessor.id, validSubjectSections)
@@ -819,7 +820,8 @@ export function ProfessorManagement({
     if (prof.subjectSections && prof.subjectSections.length > 0) {
       setEditingSubjectSections(prof.subjectSections.map((ss: any) => ({
         subject: ss.subject,
-        sectionsText: Array.isArray(ss.sections) ? ss.sections.join(', ') : ''
+        sectionsText: Array.isArray(ss.sections) ? ss.sections.join(', ') : '',
+        courseText: ss.course || ''
       })))
     } else {
       // Convert legacy format to new format
@@ -831,9 +833,9 @@ export function ProfessorManagement({
 
       if (subjectsArray.length > 0) {
         const sectionsText = prof.handledSection || ''
-        setEditingSubjectSections(subjectsArray.map((subj: string) => ({ subject: subj, sectionsText })))
+        setEditingSubjectSections(subjectsArray.map((subj: string) => ({ subject: subj, sectionsText, courseText: '' })))
       } else {
-        setEditingSubjectSections([{ subject: '', sectionsText: '' }])
+        setEditingSubjectSections([{ subject: '', sectionsText: '', courseText: '' }])
       }
     }
 
@@ -1187,7 +1189,7 @@ export function ProfessorManagement({
               <DialogHeader>
                 <DialogTitle>Import Professors from Excel</DialogTitle>
                 <DialogDescription>
-                  Upload an Excel file with professor data. The file should contain columns: NAME, DEPARTMENT, SUBJECTS, HANDLED SECTION, GMAIL, PASSWORD
+                  Upload an Excel file with professor data. The file should contain columns: NAME, DEPARTMENT, SUBJECTS, HANDLED SECTION, COURSE HANDLE, GMAIL, PASSWORD
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4 overflow-y-auto flex-1 min-h-0">
@@ -1249,7 +1251,7 @@ export function ProfessorManagement({
                 <div className="text-sm text-muted-foreground space-y-1">
                   <p className="font-medium">Excel Format Requirements:</p>
                   <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>First row should contain headers: NAME, DEPARTMENT, SUBJECTS, HANDLED SECTION, GMAIL, PASSWORD</li>
+                    <li>First row should contain headers: NAME, DEPARTMENT, SUBJECTS, HANDLED SECTION, COURSE HANDLE, GMAIL, PASSWORD</li>
                     <li>Each subsequent row represents one professor</li>
                     <li>Duplicate emails will be automatically skipped</li>
                   </ul>
@@ -1540,6 +1542,20 @@ export function ProfessorManagement({
                           >
                             <Edit className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 sm:mr-2" />
                             Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (window.confirm(`Are you sure you want to delete ${professor.name}? This will permanently remove all associated data.`)) {
+                                handleDeleteProfessor(professor.id)
+                              }
+                            }}
+                            className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400 transition-all duration-200 text-[11px] sm:text-xs md:text-sm min-h-[36px] sm:min-h-[40px]"
+                          >
+                            <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">Delete</span>
+                            <span className="sm:hidden">Del</span>
                           </Button>
 
                         </div>
@@ -1857,7 +1873,7 @@ export function ProfessorManagement({
                   <BookOpen className="h-5 w-5 text-indigo-500 mt-0.5" />
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-medium text-gray-700">Subjects & Handled Sections</p>
+                      <p className="text-sm font-medium text-gray-700">Subjects Handled ,Course Handled & Handled Sections</p>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1868,7 +1884,8 @@ export function ProfessorManagement({
                           if (prof.subjectSections && prof.subjectSections.length > 0) {
                             setEditingSubjectSections(prof.subjectSections.map((ss: any) => ({
                               subject: ss.subject,
-                              sectionsText: Array.isArray(ss.sections) ? ss.sections.join(', ') : ''
+                              sectionsText: Array.isArray(ss.sections) ? ss.sections.join(', ') : '',
+                              courseText: ss.course || ''
                             })))
                           } else {
                             // Convert legacy format to new format
@@ -1881,10 +1898,10 @@ export function ProfessorManagement({
                             if (subjectsArray.length > 0) {
                               // Create subject sections from legacy data
                               const sectionsText = prof.handledSection || ''
-                              setEditingSubjectSections(subjectsArray.map((subj: string) => ({ subject: subj, sectionsText })))
+                              setEditingSubjectSections(subjectsArray.map((subj: string) => ({ subject: subj, sectionsText, courseText: '' })))
                             } else {
                               // Start with empty subject section
-                              setEditingSubjectSections([{ subject: '', sectionsText: '' }])
+                              setEditingSubjectSections([{ subject: '', sectionsText: '', courseText: '' }])
                             }
                           }
                           setIsEditSubjectsDialogOpen(true)
@@ -1902,13 +1919,19 @@ export function ProfessorManagement({
                       if (prof.subjectSections && prof.subjectSections.length > 0) {
                         return (
                           <div className="space-y-3">
-                            {prof.subjectSections.map((ss: { subject: string; sections: string[] }, idx: number) => (
+                            {prof.subjectSections.map((ss: { subject: string; sections: string[]; course?: string }, idx: number) => (
                               <div key={idx} className="bg-white p-3 rounded-md border border-gray-200">
                                 <div className="flex items-center gap-2 mb-2">
                                   <Badge variant="default" className="text-xs">
                                     {ss.subject}
                                   </Badge>
                                 </div>
+                                {ss.course && (
+                                  <div className="mb-2">
+                                    <span className="text-xs text-gray-500">Course: </span>
+                                    <span className="text-xs font-medium text-indigo-700">{ss.course}</span>
+                                  </div>
+                                )}
                                 {ss.sections && ss.sections.length > 0 ? (
                                   <div className="flex flex-wrap gap-1.5">
                                     {ss.sections.map((section: string, sIdx: number) => (
@@ -2125,6 +2148,19 @@ export function ProfessorManagement({
                     </div>
 
                     <div className="grid gap-2">
+                      <Label className="text-sm text-gray-600">Handled Course</Label>
+                      <Input
+                        value={ss.courseText}
+                        onChange={(e) => {
+                          setEditingSubjectSections(prev => prev.map((item, i) =>
+                            i === idx ? { ...item, courseText: e.target.value } : item
+                          ))
+                        }}
+                        placeholder="e.g., BS Accounting Information System"
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
                       <Label className="text-sm text-gray-600">Handled Sections (comma-separated)</Label>
                       <Input
                         value={ss.sectionsText}
@@ -2144,7 +2180,7 @@ export function ProfessorManagement({
                 variant="outline"
                 className="w-full mt-2"
                 onClick={() => {
-                  setEditingSubjectSections(prev => [...prev, { subject: '', sectionsText: '' }])
+                  setEditingSubjectSections(prev => [...prev, { subject: '', sectionsText: '', courseText: '' }])
                 }}
               >
                 <PlusCircle className="h-4 w-4 mr-2" />
@@ -2204,6 +2240,21 @@ export function ProfessorManagement({
 
                 <div>
                   <Label className="text-xs text-gray-500 mb-2 block">
+                    Handled Course
+                  </Label>
+                  <Input
+                    value={ss.courseText}
+                    onChange={(e) => {
+                      setEditingSubjectSections(prev => prev.map((item, i) =>
+                        i === idx ? { ...item, courseText: e.target.value } : item
+                      ))
+                    }}
+                    placeholder="e.g., BS Accounting Information System"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-gray-500 mb-2 block">
                     Sections (comma-separated, e.g., 1A, 1B, 2C)
                   </Label>
                   <Input
@@ -2223,7 +2274,7 @@ export function ProfessorManagement({
               variant="outline"
               className="w-full"
               onClick={() => {
-                setEditingSubjectSections(prev => [...prev, { subject: '', sectionsText: '' }])
+                setEditingSubjectSections(prev => [...prev, { subject: '', sectionsText: '', courseText: '' }])
               }}
             >
               <PlusCircle className="h-4 w-4 mr-2" />
@@ -2248,7 +2299,8 @@ export function ProfessorManagement({
                   .filter(ss => ss.subject.trim() !== '')
                   .map(ss => ({
                     subject: ss.subject,
-                    sections: ss.sectionsText.split(',').map(s => s.trim()).filter(s => s)
+                    sections: ss.sectionsText.split(',').map(s => s.trim()).filter(s => s),
+                    course: ss.courseText?.trim() || ''
                   }))
 
                 setIsSavingSubjects(true)
@@ -2425,6 +2477,7 @@ export function ProfessorManagement({
                           <TableHead className="min-w-[200px]">Department</TableHead>
                           <TableHead className="min-w-[200px]">Subject</TableHead>
                           <TableHead className="min-w-[120px]">Handled Section</TableHead>
+                          <TableHead className="min-w-[180px]">Course Handle</TableHead>
                           <TableHead className="min-w-[200px]">Email</TableHead>
                           <TableHead className="min-w-[120px]">Status</TableHead>
                         </TableRow>
@@ -2477,6 +2530,30 @@ export function ProfessorManagement({
                                   </div>
                                 ) : professor.handledSection ? (
                                   <Badge variant="outline">{professor.handledSection}</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {/* Display course handle */}
+                                {professor.subjectSections && professor.subjectSections.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {professor.subjectSections.slice(0, 2).map((ss, idx) => (
+                                      ss.course ? (
+                                        <Badge key={idx} variant="outline" className="text-xs text-indigo-700 border-indigo-300">
+                                          {ss.course}
+                                        </Badge>
+                                      ) : null
+                                    )).filter(Boolean)}
+                                    {professor.subjectSections.filter(ss => ss.course).length > 2 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{professor.subjectSections.filter(ss => ss.course).length - 2} more
+                                      </Badge>
+                                    )}
+                                    {professor.subjectSections.every(ss => !ss.course) && (
+                                      <span className="text-muted-foreground text-sm">-</span>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span className="text-muted-foreground text-sm">-</span>
                                 )}

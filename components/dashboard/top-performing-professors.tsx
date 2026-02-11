@@ -262,9 +262,10 @@ export function TopPerformingProfessors() {
     }
   }
 
-  // Export current category data to PDF
+  // Export ALL categories data to PDF (all sections in one file)
   const exportToPDF = () => {
-    if (!selectedCategory || filteredAndSortedProfessors.length === 0) return
+    const hasAnyData = categories.some(cat => (allByCategory[cat.key]?.length || 0) > 0)
+    if (!hasAnyData) return
 
     const doc = new jsPDF({ orientation: "landscape" })
     const pageWidth = doc.internal.pageSize.getWidth()
@@ -280,84 +281,99 @@ export function TopPerformingProfessors() {
       return truncated + "..."
     }
 
-    // Title
+    // Main Title
     doc.setFontSize(16)
     doc.setFont("helvetica", "bold")
     doc.text(`All Professors Performance by Category`, 14, 18)
-    doc.setFontSize(12)
+    doc.setFontSize(10)
     doc.setFont("helvetica", "normal")
-    doc.text(`Category: ${selectedCategory}`, 14, 26)
+    doc.setTextColor(120, 120, 120)
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26)
 
-    // Table settings
-    const startY = 36
-    const colX = [14, 30, 100, 190, 240] // Rank, Professor, Department, Performance, Score
-    const colWidths = [14, 68, 88, 48, 40] // max width for each column (gap before next col minus padding)
+    const colX = [14, 30, 100, 190, 240]
+    const colWidths = [14, 68, 88, 48, 40]
     const colHeaders = ["Rank", "Professor", "Department", "Performance", "Score"]
     const rowHeight = 8
 
-    // Draw header
-    doc.setFillColor(245, 245, 245)
-    doc.rect(12, startY - 6, pageWidth - 24, rowHeight + 2, "F")
-    doc.setFontSize(10)
-    doc.setFont("helvetica", "bold")
-    doc.setTextColor(60, 60, 60)
-    colHeaders.forEach((header, i) => {
-      doc.text(header, colX[i], startY)
-    })
+    let y = 34
+    let isFirstCategory = true
 
-    // Draw rows
-    doc.setFont("helvetica", "normal")
-    doc.setTextColor(30, 30, 30)
-    let y = startY + rowHeight + 2
+    // Loop through ALL categories
+    categories.forEach((category) => {
+      const categoryProfessors = allByCategory[category.key] || []
+      if (categoryProfessors.length === 0) return
 
-    filteredAndSortedProfessors.forEach((professor, index) => {
-      // Page break check
-      if (y > pageHeight - 20) {
+      const sorted = [...categoryProfessors].sort((a, b) => b.performanceScore - a.performanceScore)
+
+      // New page if not enough room for header + at least one row
+      if (!isFirstCategory && y > pageHeight - 40) {
         doc.addPage()
         y = 20
-        // Re-draw header on new page
-        doc.setFillColor(245, 245, 245)
-        doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
-        doc.setFont("helvetica", "bold")
-        doc.setTextColor(60, 60, 60)
-        colHeaders.forEach((header, i) => {
-          doc.text(header, colX[i], y)
-        })
-        doc.setFont("helvetica", "normal")
-        doc.setTextColor(30, 30, 30)
-        y += rowHeight + 2
       }
 
-      // Alternate row background
-      if (index % 2 === 0) {
-        doc.setFillColor(252, 252, 252)
-        doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
-      }
+      // Category header
+      if (!isFirstCategory) y += 6
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(30, 30, 30)
+      doc.text(category.label, 14, y)
+      y += 4
+      doc.setDrawColor(59, 130, 246)
+      doc.setLineWidth(0.5)
+      doc.line(14, y, pageWidth - 14, y)
+      y += 6
 
-      doc.text(`${index + 1}`, colX[0], y)
-      doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
-      doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
-      doc.text(getPerformanceLabel(professor.performanceScore), colX[3], y)
-      doc.text(`${professor.performanceScore}%`, colX[4], y)
+      // Table header
+      doc.setFillColor(245, 245, 245)
+      doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
+      doc.setFontSize(10)
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(60, 60, 60)
+      colHeaders.forEach((header, i) => doc.text(header, colX[i], y))
 
-      y += rowHeight
+      doc.setFont("helvetica", "normal")
+      doc.setTextColor(30, 30, 30)
+      y += rowHeight + 2
+
+      sorted.forEach((professor, index) => {
+        if (y > pageHeight - 20) {
+          doc.addPage()
+          y = 20
+          doc.setFillColor(245, 245, 245)
+          doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
+          doc.setFontSize(10)
+          doc.setFont("helvetica", "bold")
+          doc.setTextColor(60, 60, 60)
+          colHeaders.forEach((header, i) => doc.text(header, colX[i], y))
+          doc.setFont("helvetica", "normal")
+          doc.setTextColor(30, 30, 30)
+          y += rowHeight + 2
+        }
+
+        if (index % 2 === 0) {
+          doc.setFillColor(252, 252, 252)
+          doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+        }
+
+        doc.setFontSize(10)
+        doc.text(`${index + 1}`, colX[0], y)
+        doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
+        doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
+        doc.text(getPerformanceLabel(professor.performanceScore), colX[3], y)
+        doc.text(`${professor.performanceScore}%`, colX[4], y)
+        y += rowHeight
+      })
+
+      y += 2
+      doc.setFontSize(8)
+      doc.setTextColor(120, 120, 120)
+      doc.text(`${sorted.length} professor${sorted.length !== 1 ? "s" : ""} in ${category.label}`, 14, y)
+      y += 6
+
+      isFirstCategory = false
     })
 
-    // Summary footer
-    y += 6
-    if (y > pageHeight - 15) {
-      doc.addPage()
-      y = 20
-    }
-    doc.setFontSize(9)
-    doc.setTextColor(120, 120, 120)
-    doc.text(
-      `Showing ${filteredAndSortedProfessors.length} of ${allByCategory[selectedCategory]?.length || 0} professors in ${selectedCategory}`,
-      14,
-      y
-    )
-
-    doc.save(`professors_performance_${selectedCategory.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`)
+    doc.save(`all_professors_performance_by_category.pdf`)
   }
 
   // Get total count of all professors across all categories
@@ -426,11 +442,11 @@ export function TopPerformingProfessors() {
                       variant="outline"
                       size="sm"
                       onClick={exportToPDF}
-                      disabled={!selectedCategory || filteredAndSortedProfessors.length === 0}
+                      disabled={!categories.some(cat => (allByCategory[cat.key]?.length || 0) > 0)}
                       className="gap-2"
                     >
                       <FileDown className="h-4 w-4" />
-                      Export PDF
+                      Export All PDF
                     </Button>
                   </div>
 
