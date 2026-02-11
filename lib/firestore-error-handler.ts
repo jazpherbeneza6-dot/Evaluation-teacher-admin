@@ -76,12 +76,11 @@ if (typeof window !== 'undefined') {
     
     // Suppress MEGA connection timeout errors (handled gracefully in MEGA service)
     if (
-      (errorCode === 'UND_ERR_CONNECT_TIMEOUT' || 
-       errorMessage.includes('Connect Timeout') ||
-       errorMessage.includes('fetch failed')) &&
-      (errorMessage.includes('66.203.125') || // MEGA server IPs
-       errorMessage.includes('mega') ||
-       errorMessage.includes('MEGA'))
+      errorCode === 'UND_ERR_CONNECT_TIMEOUT' || 
+      errorMessage.includes('Connect Timeout') ||
+      errorMessage.includes('ConnectTimeoutError') ||
+      errorMessage.includes('fetch failed') ||
+      (errorMessage.includes('timeout') && errorMessage.includes('66.203.125')) // MEGA server IPs
     ) {
       // MEGA connection errors are handled in the service layer
       // Don't show unhandled rejection for these

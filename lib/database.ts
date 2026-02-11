@@ -37,12 +37,37 @@ export const departmentService = {
   async getAll(): Promise<Department[]> {
     try {
       const querySnapshot = await getDocs(query(collection(db, "departments"), orderBy("name")))
-      return querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt.toDate(),
-        updatedAt: doc.data().updatedAt.toDate(),
-      })) as Department[]
+      const departments = querySnapshot.docs.map((doc) => {
+        const data = doc.data()
+        // Clean up invalid imageUrl values (like "123123" or other non-URL values)
+        // But allow base64 data URIs (data:image/...) which are valid
+        let imageUrl = data.imageUrl
+        if (imageUrl && typeof imageUrl === 'string') {
+          const isValidUrl = imageUrl.startsWith('/api/') ||
+            imageUrl.startsWith('http://') ||
+            imageUrl.startsWith('https://') ||
+            imageUrl.startsWith('/') ||
+            imageUrl.startsWith('data:') // Allow base64 data URIs
+          if (!isValidUrl) {
+            // Invalid imageUrl - remove it
+            console.warn(`Invalid imageUrl "${imageUrl}" found for department ${doc.id}, removing it`)
+            imageUrl = undefined
+            // Update database to remove invalid imageUrl
+            updateDoc(doc.ref, { imageUrl: null }).catch(err =>
+              console.warn(`Failed to clean invalid imageUrl for department ${doc.id}:`, err)
+            )
+          }
+        }
+        return {
+          id: doc.id,
+          ...doc.data(),
+          imageUrl, // Use cleaned imageUrl
+          createdAt: doc.data().createdAt.toDate(),
+          updatedAt: doc.data().updatedAt.toDate(),
+        }
+      }) as Department[]
+
+      return departments
     } catch (error) {
       console.error("Error fetching departments:", error)
       return []
@@ -54,8 +79,25 @@ export const departmentService = {
       name,
       updatedAt: Timestamp.now(),
     }
-    if (imageUrl !== undefined) {
-      updateData.imageUrl = imageUrl
+    // Update imageUrl if provided and valid
+    // Accepts: /api/, http://, https://, /, or data: (base64 data URI)
+    // This prevents invalid values like "123123" from being saved
+    if (imageUrl !== undefined && imageUrl !== null && imageUrl !== '') {
+      const isValidUrl = imageUrl.startsWith('/api/') ||
+        imageUrl.startsWith('http://') ||
+        imageUrl.startsWith('https://') ||
+        imageUrl.startsWith('/') ||
+        imageUrl.startsWith('data:') // Allow base64 data URIs
+      if (isValidUrl) {
+        updateData.imageUrl = imageUrl
+      } else {
+        // Invalid imageUrl - remove it instead of saving invalid value
+        updateData.imageUrl = null
+        console.warn(`Invalid imageUrl value "${imageUrl}" for department ${id}, removing it`)
+      }
+    } else if (imageUrl === null || imageUrl === '') {
+      // Explicitly remove imageUrl if null or empty string is passed
+      updateData.imageUrl = null
     }
     await updateDoc(doc(db, "departments", id), updateData)
   },
@@ -80,7 +122,7 @@ export const departmentService = {
       // Check if department has any remaining professors
       const professorsQuery = query(collection(db, "professors"), where("departmentId", "==", departmentId))
       const professorsSnapshot = await getDocs(professorsQuery)
-      
+
       // If no professors left, delete the department
       if (professorsSnapshot.empty) {
         await deleteDoc(doc(db, "departments", departmentId))
@@ -135,65 +177,75 @@ export const professorService = {
   },
 
   // Batch import professors from Excel (skip duplicates)
-  async importProfessors(professors: Array<{
-    name: string
-    email: string
-    departmentName: string
-    password: string
-    subject?: string
-    handledSection?: string
-  }>): Promise<{ success: number; skipped: number; errors: string[] }> {
+  async importProfessors(
+    professors: Array<{
+      name: string
+      email: string
+      departmentName: string
+      password: string
+      subjects?: string[] // Array of subjects (supports multiple subjects)
+      subject?: string // Legacy single subject field for backward compatibility
+      subjectSections?: Array<{ subject: string; sections: string[] }> // Paired subjects with sections
+      handledSection?: string
+    }>,
+    onProgress?: (current: number, total: number) => void
+  ): Promise<{ success: number; skipped: number; errors: string[] }> {
     let successCount = 0
     let skippedCount = 0
     const errors: string[] = []
     const batchSize = 500 // Firestore batch limit
-    
+
     try {
       // Get all existing emails to check for duplicates
       const existingProfessorsQuery = query(collection(db, "professors"))
       const existingProfessorsSnapshot = await getDocs(existingProfessorsQuery)
       const existingEmails = new Set<string>()
-      
+
       existingProfessorsSnapshot.docs.forEach(doc => {
         const data = doc.data()
         if (data.email) {
           existingEmails.add(data.email.toLowerCase().trim())
         }
       })
-      
+
       // Process professors in batches
+      const totalProfessors = professors.length
+      onProgress?.(0, totalProfessors) // Initialize progress
+
       for (let i = 0; i < professors.length; i += batchSize) {
         const batch = writeBatch(db)
         let batchOperations = 0
-        
+
         for (let j = i; j < Math.min(i + batchSize, professors.length); j++) {
           const professor = professors[j]
-          
+
           // Normalize email for comparison
           const normalizedEmail = professor.email.toLowerCase().trim()
-          
+
           // Check for duplicates
           if (existingEmails.has(normalizedEmail)) {
             skippedCount++
             errors.push(`Skipped: Email ${professor.email} already exists`)
+            // Update progress even for skipped items
+            onProgress?.(j + 1, totalProfessors)
             continue
           }
-          
+
           // Add to set to prevent duplicates within the same import
           existingEmails.add(normalizedEmail)
-          
+
           // Find or create department
           let departmentId = ""
           const departmentsSnapshot = await getDocs(
             query(collection(db, "departments"), where("name", "==", professor.departmentName))
           )
-          
+
           if (departmentsSnapshot.empty) {
             departmentId = await departmentService.create(professor.departmentName)
           } else {
             departmentId = departmentsSnapshot.docs[0].id
           }
-          
+
           // Create professor document
           const professorData: any = {
             name: professor.name.trim(),
@@ -206,29 +258,46 @@ export const professorService = {
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
           }
-          
-          if (professor.subject) {
-            professorData.subject = professor.subject.trim()
+
+          // Handle subjects - store as array in Firestore
+          // Supports both new 'subjects' array format and legacy 'subject' string
+          if (professor.subjects && professor.subjects.length > 0) {
+            professorData.subjects = professor.subjects // Store as array
+          } else if (professor.subject) {
+            // Legacy support: convert single subject to array
+            professorData.subjects = [professor.subject.trim()]
           }
+
+          // Store subject-section pairs if available
+          if (professor.subjectSections && professor.subjectSections.length > 0) {
+            professorData.subjectSections = professor.subjectSections
+          }
+
           if (professor.handledSection) {
             professorData.handledSection = professor.handledSection.trim()
           }
-          
+
           const docRef = doc(collection(db, "professors"))
           batch.set(docRef, professorData)
           batchOperations++
           successCount++
-          
+
+          // Update progress after each professor
+          onProgress?.(j + 1, totalProfessors)
+
           console.log(`Adding professor: ${professor.name} (${professor.email})`)
         }
-        
+
         // Commit batch if it has operations
         if (batchOperations > 0) {
           await batch.commit()
           console.log(`Committed batch: ${batchOperations} professors saved`)
         }
       }
-      
+
+      // Ensure progress is 100% at the end
+      onProgress?.(totalProfessors, totalProfessors)
+
       console.log(`Import complete: ${successCount} added, ${skippedCount} skipped`)
       return { success: successCount, skipped: skippedCount, errors }
     } catch (error) {
@@ -240,12 +309,52 @@ export const professorService = {
   async getAll(): Promise<Professor[]> {
     try {
       const querySnapshot = await getDocs(query(collection(db, "professors"), orderBy("name")))
-      return querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt.toDate(),
-        updatedAt: doc.data().updatedAt.toDate(),
-      })) as Professor[]
+      const professors = querySnapshot.docs.map((doc) => {
+        const data = doc.data()
+        // Clean up invalid imageUrl values (like "123123" or other non-URL values)
+        // But allow base64 data URIs (data:image/...) which are valid
+        let imageUrl = data.imageUrl
+        if (imageUrl && typeof imageUrl === 'string') {
+          const isValidUrl = imageUrl.startsWith('/api/') ||
+            imageUrl.startsWith('http://') ||
+            imageUrl.startsWith('https://') ||
+            imageUrl.startsWith('/') ||
+            imageUrl.startsWith('data:') // Allow base64 data URIs
+          if (!isValidUrl) {
+            // Invalid imageUrl - remove it
+            console.warn(`Invalid imageUrl "${imageUrl}" found for professor ${doc.id}, removing it`)
+            imageUrl = undefined
+            // Update database to remove invalid imageUrl
+            updateDoc(doc.ref, { imageUrl: null }).catch(err =>
+              console.warn(`Failed to clean invalid imageUrl for professor ${doc.id}:`, err)
+            )
+          }
+        }
+        // Include profilePictureUrl (can be base64 data URI)
+        let profilePictureUrl = data.profilePictureUrl
+        if (profilePictureUrl && typeof profilePictureUrl === 'string') {
+          const isValidUrl = profilePictureUrl.startsWith('/api/') ||
+            profilePictureUrl.startsWith('http://') ||
+            profilePictureUrl.startsWith('https://') ||
+            profilePictureUrl.startsWith('/') ||
+            profilePictureUrl.startsWith('data:') // Allow base64 data URIs
+          if (!isValidUrl) {
+            // Invalid profilePictureUrl - remove it
+            console.warn(`Invalid profilePictureUrl "${profilePictureUrl}" found for professor ${doc.id}, removing it`)
+            profilePictureUrl = undefined
+          }
+        }
+        return {
+          id: doc.id,
+          ...data,
+          imageUrl, // Use cleaned imageUrl
+          profilePictureUrl, // Include profilePictureUrl
+          createdAt: doc.data().createdAt.toDate(),
+          updatedAt: doc.data().updatedAt.toDate(),
+        }
+      }) as Professor[]
+
+      return professors
     } catch (error) {
       console.error("Error fetching professors:", error)
       return []
@@ -269,7 +378,7 @@ export const professorService = {
     }
   },
 
-  async update(id: string, name: string, email: string, departmentName: string, password?: string, status?: "active" | "inactive"): Promise<void> {
+  async update(id: string, name: string, email: string, departmentName: string, imageUrl?: string, password?: string, status?: "active" | "inactive" | "resigned" | "retired"): Promise<void> {
     try {
       // Find or create department
       let departmentId = ""
@@ -293,6 +402,27 @@ export const professorService = {
         updatedAt: Timestamp.now(),
       }
 
+      // Update imageUrl if provided and valid
+      // Accepts: /api/, http://, https://, /, or data: (base64 data URI)
+      // This prevents invalid values like "123123" from being saved
+      if (imageUrl !== undefined && imageUrl !== null && imageUrl !== '') {
+        const isValidUrl = imageUrl.startsWith('/api/') ||
+          imageUrl.startsWith('http://') ||
+          imageUrl.startsWith('https://') ||
+          imageUrl.startsWith('/') ||
+          imageUrl.startsWith('data:') // Allow base64 data URIs
+        if (isValidUrl) {
+          updateData.imageUrl = imageUrl
+        } else {
+          // Invalid imageUrl - remove it instead of saving invalid value
+          updateData.imageUrl = null
+          console.warn(`Invalid imageUrl value "${imageUrl}" for professor ${id}, removing it`)
+        }
+      } else if (imageUrl === null || imageUrl === '') {
+        // Explicitly remove imageUrl if null or empty string is passed
+        updateData.imageUrl = null
+      }
+
       // Only update password if provided
       if (password) {
         updateData.password = password
@@ -310,6 +440,38 @@ export const professorService = {
     }
   },
 
+  // Update professor profile picture (saves as base64 data URI)
+  async updateProfilePicture(id: string, profilePictureUrl: string): Promise<void> {
+    try {
+      const updateData: any = {
+        profilePictureUrl,
+        updatedAt: Timestamp.now(),
+      }
+      await updateDoc(doc(db, "professors", id), updateData)
+    } catch (error) {
+      console.error("Error updating professor profile picture:", error)
+      throw error
+    }
+  },
+
+  // Update professor subject sections (subjects and their handled sections)
+  async updateSubjectSections(id: string, subjectSections: Array<{ subject: string; sections: string[] }>): Promise<void> {
+    try {
+      // Extract subjects array from subjectSections
+      const subjects = subjectSections.map(ss => ss.subject)
+
+      const updateData: any = {
+        subjectSections,
+        subjects,
+        updatedAt: Timestamp.now(),
+      }
+      await updateDoc(doc(db, "professors", id), updateData)
+    } catch (error) {
+      console.error("Error updating professor subject sections:", error)
+      throw error
+    }
+  },
+
   async delete(id: string): Promise<void> {
     try {
       // Get professor info before deleting
@@ -317,7 +479,7 @@ export const professorService = {
       if (!professorDoc.exists()) {
         throw new Error("Professor not found")
       }
-      
+
       const professorData = professorDoc.data()
       const departmentId = professorData.departmentId
       const professorEmail = professorData.email
@@ -339,20 +501,20 @@ export const professorService = {
     let isMainListenerActive = true
     let isUnsubscribed = false
     let mainUnsubscribe: Unsubscribe | null = null
-    
+
     // Try to use filtered query first, but handle errors gracefully
     try {
       // First try with orderBy
       const professorsQuery = query(
-        collection(db, "professors"), 
+        collection(db, "professors"),
         orderBy("name", "asc")
       )
-      
+
       mainUnsubscribe = onSnapshot(
-        professorsQuery, 
+        professorsQuery,
         (snapshot) => {
           if (!isMainListenerActive || isUnsubscribed) return
-          
+
           try {
             const professors = snapshot.docs.map((doc) => {
               const data = doc.data()
@@ -363,7 +525,7 @@ export const professorService = {
                 updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(),
               }
             })
-            
+
             callback(professors)
           } catch (processError: any) {
             // Suppress Firestore internal assertion errors
@@ -377,26 +539,26 @@ export const professorService = {
               callback([])
             }
           }
-        }, 
+        },
         (error: any) => {
           if (isUnsubscribed) return
-          
+
           // Suppress Firestore internal assertion errors
           const errorMessage = error?.message || String(error)
           if (errorMessage.includes('FIRESTORE') && errorMessage.includes('INTERNAL ASSERTION FAILED')) {
             console.warn("Firestore internal error suppressed, continuing with listener")
             return
           }
-          
+
           // Check if it's a missing index error
           if (error.code === 'failed-precondition' || error.message?.includes('index')) {
             console.warn("Composite index missing, using fallback query:", error)
           } else {
             console.error("Real-time listener error, using fallback:", error)
           }
-          
+
           isMainListenerActive = false
-          
+
           // Unsubscribe from main listener before setting up fallback
           if (mainUnsubscribe) {
             try {
@@ -410,22 +572,22 @@ export const professorService = {
             }
             mainUnsubscribe = null
           }
-          
+
           // Use setTimeout to avoid state conflicts
           setTimeout(() => {
             if (isUnsubscribed) return
-            
+
             try {
               // Fallback: try without orderBy
               const fallbackQuery = query(
                 collection(db, "professors")
               )
-              
+
               fallbackUnsubscribe = onSnapshot(
-                fallbackQuery, 
+                fallbackQuery,
                 (fallbackSnapshot) => {
                   if (isUnsubscribed) return
-                  
+
                   try {
                     const allDocs = fallbackSnapshot.docs.map((doc) => {
                       const data = doc.data()
@@ -436,14 +598,14 @@ export const professorService = {
                         updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(),
                       } as any
                     })
-                    
+
                     // Sort manually if needed
                     allDocs.sort((a, b) => {
                       const aName = a.name || ''
                       const bName = b.name || ''
                       return aName.localeCompare(bName)
                     })
-                    
+
                     callback(allDocs)
                   } catch (processError: any) {
                     // Suppress Firestore internal errors
@@ -457,7 +619,7 @@ export const professorService = {
                       callback([])
                     }
                   }
-                }, 
+                },
                 (fallbackError: any) => {
                   if (isUnsubscribed) return
                   // Suppress Firestore internal errors
@@ -485,12 +647,12 @@ export const professorService = {
           }, 200) // Increased delay to avoid race conditions
         }
       )
-      
+
       // Return a function that unsubscribes from both listeners
       return () => {
         isUnsubscribed = true
         isMainListenerActive = false
-        
+
         if (mainUnsubscribe) {
           try {
             mainUnsubscribe()
@@ -502,7 +664,7 @@ export const professorService = {
             }
           }
         }
-        
+
         if (fallbackUnsubscribe) {
           try {
             fallbackUnsubscribe()
@@ -523,13 +685,17 @@ export const professorService = {
       }
       // Return empty callback if setup fails
       callback([])
-      return () => {} // Return empty unsubscribe function
+      return () => { } // Return empty unsubscribe function
     }
   },
 
   // Comprehensive deletion function that removes ALL professor-related data
   async deleteProfessorCompletely(professorId: string, professorEmail: string): Promise<void> {
     try {
+      // Get professor info before deleting
+      const professorDoc = await getDoc(doc(db, "professors", professorId))
+      const professorName = professorDoc.exists() ? professorDoc.data().name : null
+
       // Run all queries in parallel for faster execution
       const [
         evaluationResultsSnapshot,
@@ -548,7 +714,7 @@ export const professorService = {
       // Collect all document references
       const docRefsToDelete: any[] = []
       const seenPaths = new Set<string>()
-      
+
       // Helper to add ref if not already seen
       const addRefIfUnique = (ref: any) => {
         const path = ref.path
@@ -557,13 +723,13 @@ export const professorService = {
           docRefsToDelete.push(ref)
         }
       }
-      
+
       evaluationResultsSnapshot.docs.forEach((doc) => addRefIfUnique(doc.ref))
       evaluationResultsByEmailSnapshot.docs.forEach((doc) => addRefIfUnique(doc.ref))
       evaluationSubmissionsSnapshot.docs.forEach((doc) => addRefIfUnique(doc.ref))
       evaluationQuestionsSnapshot.docs.forEach((doc) => addRefIfUnique(doc.ref))
       postsSnapshot.docs.forEach((doc) => addRefIfUnique(doc.ref))
-      
+
       // Add professor document
       const professorRef = doc(db, "professors", professorId)
       addRefIfUnique(professorRef)
@@ -573,20 +739,21 @@ export const professorService = {
       for (let i = 0; i < docRefsToDelete.length; i += batchSize) {
         const batch = writeBatch(db)
         const batchRefs = docRefsToDelete.slice(i, i + batchSize)
-        
+
         batchRefs.forEach((ref) => {
           batch.delete(ref)
         })
-        
+
         await batch.commit()
       }
 
       console.log(`Successfully deleted professor ${professorId} and all related data`)
 
+
       // Delete from Firebase Authentication via API endpoint (non-blocking, fire and forget)
       fetch('/api/delete-user-auth', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ email: professorEmail })
@@ -813,7 +980,7 @@ export const evaluationQuestionService = {
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       updatedAt: doc.data().updatedAt?.toDate() || new Date(),
     })) as EvaluationQuestion[]
-    
+
     // Sort in memory by createdAt descending
     return questions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   },
@@ -969,22 +1136,22 @@ export const studentService = {
     let isUnsubscribed = false
     let mainUnsubscribe: Unsubscribe | null = null
     let fallbackTimeout: NodeJS.Timeout | null = null
-    
+
     // Try to use filtered query first, but handle errors gracefully
     try {
       // First try with orderBy
       const studentsQuery = query(
-        collection(db, "users"), 
-        where("role", "==", "student"), 
+        collection(db, "users"),
+        where("role", "==", "student"),
         orderBy("createdAt", "desc")
       )
-      
+
       mainUnsubscribe = onSnapshot(
-        studentsQuery, 
+        studentsQuery,
         (snapshot) => {
           // Early return checks
           if (!isMainListenerActive || isUnsubscribed) return
-          
+
           try {
             const students = snapshot.docs.map((doc) => {
               const data = doc.data()
@@ -995,7 +1162,7 @@ export const studentService = {
                 updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(),
               }
             })
-            
+
             // Only call callback if not unsubscribed
             if (!isUnsubscribed) {
               callback(students)
@@ -1012,28 +1179,28 @@ export const studentService = {
               callback([])
             }
           }
-        }, 
+        },
         (error: any) => {
           // Early return if already unsubscribed
           if (isUnsubscribed) return
-          
+
           // Suppress Firestore internal assertion errors
           const errorMessage = error?.message || String(error)
           if (errorMessage.includes('FIRESTORE') && errorMessage.includes('INTERNAL ASSERTION FAILED')) {
             console.warn("Firestore internal error suppressed, continuing with listener")
             return
           }
-          
+
           // Check if it's a missing index error
           if (error.code === 'failed-precondition' || error.message?.includes('index')) {
             console.warn("Composite index missing, using fallback query:", error)
           } else {
             console.error("Real-time listener error, using fallback:", error)
           }
-          
+
           // Mark main listener as inactive
           isMainListenerActive = false
-          
+
           // Unsubscribe from main listener before setting up fallback
           if (mainUnsubscribe) {
             try {
@@ -1047,13 +1214,13 @@ export const studentService = {
             }
             mainUnsubscribe = null
           }
-          
+
           // Clear any existing fallback timeout
           if (fallbackTimeout) {
             clearTimeout(fallbackTimeout)
             fallbackTimeout = null
           }
-          
+
           // Use setTimeout to avoid state conflicts - increased delay
           fallbackTimeout = setTimeout(() => {
             // Double check if still subscribed
@@ -1061,20 +1228,20 @@ export const studentService = {
               fallbackTimeout = null
               return
             }
-            
+
             try {
               // Fallback: try without orderBy
               const fallbackQuery = query(
-                collection(db, "users"), 
+                collection(db, "users"),
                 where("role", "==", "student")
               )
-              
+
               fallbackUnsubscribe = onSnapshot(
-                fallbackQuery, 
+                fallbackQuery,
                 (fallbackSnapshot) => {
                   // Early return check
                   if (isUnsubscribed) return
-                  
+
                   try {
                     const allDocs = fallbackSnapshot.docs.map((doc) => {
                       const data = doc.data()
@@ -1085,14 +1252,14 @@ export const studentService = {
                         updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(),
                       } as any
                     })
-                    
+
                     // Sort manually if needed
                     allDocs.sort((a, b) => {
                       const aDate = a.createdAt instanceof Date ? a.createdAt.getTime() : 0
                       const bDate = b.createdAt instanceof Date ? b.createdAt.getTime() : 0
                       return bDate - aDate
                     })
-                    
+
                     // Only call callback if not unsubscribed
                     if (!isUnsubscribed) {
                       callback(allDocs)
@@ -1109,11 +1276,11 @@ export const studentService = {
                       callback([])
                     }
                   }
-                }, 
+                },
                 (fallbackError: any) => {
                   // Early return check
                   if (isUnsubscribed) return
-                  
+
                   // Suppress Firestore internal errors
                   const errorMessage = fallbackError?.message || String(fallbackError)
                   if (errorMessage.includes('FIRESTORE') && errorMessage.includes('INTERNAL ASSERTION FAILED')) {
@@ -1143,19 +1310,19 @@ export const studentService = {
           }, 300) // Increased delay to avoid race conditions
         }
       )
-      
+
       // Return a function that unsubscribes from both listeners
       return () => {
         // Mark as unsubscribed first to prevent any callbacks
         isUnsubscribed = true
         isMainListenerActive = false
-        
+
         // Clear fallback timeout if it exists
         if (fallbackTimeout) {
           clearTimeout(fallbackTimeout)
           fallbackTimeout = null
         }
-        
+
         // Unsubscribe from main listener
         if (mainUnsubscribe) {
           try {
@@ -1169,7 +1336,7 @@ export const studentService = {
           }
           mainUnsubscribe = null
         }
-        
+
         // Unsubscribe from fallback listener
         if (fallbackUnsubscribe) {
           try {
@@ -1188,29 +1355,29 @@ export const studentService = {
       console.error("Error setting up student listener:", setupError)
       // Return empty callback if setup fails
       callback([])
-      return () => {} // Return empty unsubscribe function
+      return () => { } // Return empty unsubscribe function
     }
   },
   async create(firstName: string, lastName: string, suffix: string, studentId: string, email: string, password: string, yearLevel: string, course: string, section: string, subject?: string, status?: string, accountStatus?: string): Promise<string> {
     try {
       // Check if student ID already exists
       const existingStudentQuery = query(
-        collection(db, "users"), 
+        collection(db, "users"),
         where("studentId", "==", studentId)
       )
       const existingStudentSnapshot = await getDocs(existingStudentQuery)
-      
+
       if (!existingStudentSnapshot.empty) {
         throw new Error("Student ID already exists. Please use a different student ID.")
       }
 
       // Check if email already exists
       const existingEmailQuery = query(
-        collection(db, "users"), 
+        collection(db, "users"),
         where("email", "==", email)
       )
       const existingEmailSnapshot = await getDocs(existingEmailQuery)
-      
+
       if (!existingEmailSnapshot.empty) {
         throw new Error("Email already exists. Please use a different email address.")
       }
@@ -1258,7 +1425,8 @@ export const studentService = {
     yearLevel: string
     course: string
     section: string
-    subject?: string
+    subjects?: string[] // Array of enrolled subjects (supports multiple subjects)
+    subject?: string // Legacy single subject field for backward compatibility
     status?: string
     accountStatus?: string
   }>): Promise<{ success: number; skipped: number; errors: string[] }> {
@@ -1266,45 +1434,45 @@ export const studentService = {
     let skippedCount = 0
     const errors: string[] = []
     const batchSize = 500 // Firestore batch limit
-    
+
     try {
       // Get all existing emails and studentIds to check for duplicates
       const existingUsersQuery = query(collection(db, "users"), where("role", "==", "student"))
       const existingUsersSnapshot = await getDocs(existingUsersQuery)
       const existingEmails = new Set<string>()
       const existingStudentIds = new Set<string>()
-      
+
       existingUsersSnapshot.docs.forEach(doc => {
         const data = doc.data()
         if (data.email) existingEmails.add(data.email.toLowerCase())
         if (data.studentId) existingStudentIds.add(data.studentId)
       })
-      
+
       // Process students in batches
       for (let i = 0; i < students.length; i += batchSize) {
         const batch = writeBatch(db)
         let batchOperations = 0
-        
+
         for (let j = i; j < Math.min(i + batchSize, students.length); j++) {
           const student = students[j]
-          
+
           // Check for duplicates
           if (existingEmails.has(student.email.toLowerCase())) {
             skippedCount++
             errors.push(`Skipped: Email ${student.email} already exists`)
             continue
           }
-          
+
           if (existingStudentIds.has(student.studentId)) {
             skippedCount++
             errors.push(`Skipped: Student ID ${student.studentId} already exists`)
             continue
           }
-          
+
           // Add to sets to prevent duplicates within the same import
           existingEmails.add(student.email.toLowerCase())
           existingStudentIds.add(student.studentId)
-          
+
           // Create student document
           const studentData: any = {
             firstName: student.firstName,
@@ -1321,26 +1489,32 @@ export const studentService = {
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
           }
-          
-          if (student.subject) {
-            studentData.subject = student.subject
+
+          // Handle subjects - store as array in Firestore
+          // Supports both new 'subjects' array format and legacy 'subject' string
+          if (student.subjects && student.subjects.length > 0) {
+            studentData.subjects = student.subjects // Store as array
+          } else if (student.subject) {
+            // Legacy support: convert single subject to array
+            studentData.subjects = [student.subject]
           }
+
           if (student.status) {
             studentData.status = student.status
           }
-          
+
           const docRef = doc(collection(db, "users"))
           batch.set(docRef, studentData)
           batchOperations++
           successCount++
         }
-        
+
         // Commit batch if it has operations
         if (batchOperations > 0) {
           await batch.commit()
         }
       }
-      
+
       return { success: successCount, skipped: skippedCount, errors }
     } catch (error) {
       console.error("Error importing students:", error)
@@ -1350,26 +1524,28 @@ export const studentService = {
 
   async update(id: string, firstName: string, lastName: string, suffix: string, studentId: string, email: string, yearLevel: string, course: string, section: string, password?: string, subject?: string, status?: string, accountStatus?: string): Promise<void> {
     try {
-      // Check if student ID already exists (excluding current student)
-      const existingStudentQuery = query(
-        collection(db, "users"), 
-        where("studentId", "==", studentId)
-      )
-      const existingStudentSnapshot = await getDocs(existingStudentQuery)
-      
-      // Filter out the current student being updated
-      const duplicateStudentId = existingStudentSnapshot.docs.find(doc => doc.id !== id)
-      if (duplicateStudentId) {
-        throw new Error("Student ID already exists. Please use a different student ID.")
+      // Only check for duplicate student ID if a non-empty studentId is provided
+      if (studentId && studentId.trim() !== "") {
+        const existingStudentQuery = query(
+          collection(db, "users"),
+          where("studentId", "==", studentId)
+        )
+        const existingStudentSnapshot = await getDocs(existingStudentQuery)
+
+        // Filter out the current student being updated
+        const duplicateStudentId = existingStudentSnapshot.docs.find(doc => doc.id !== id)
+        if (duplicateStudentId) {
+          throw new Error("Student ID already exists. Please use a different student ID.")
+        }
       }
 
       // Check if email already exists (excluding current student)
       const existingEmailQuery = query(
-        collection(db, "users"), 
+        collection(db, "users"),
         where("email", "==", email)
       )
       const existingEmailSnapshot = await getDocs(existingEmailQuery)
-      
+
       // Filter out the current student being updated
       const duplicateEmail = existingEmailSnapshot.docs.find(doc => doc.id !== id)
       if (duplicateEmail) {
@@ -1380,7 +1556,6 @@ export const studentService = {
         firstName,
         lastName,
         suffix: suffix || "",
-        studentId,
         email,
         yearLevel,
         course,
@@ -1388,10 +1563,15 @@ export const studentService = {
         updatedAt: Timestamp.now(),
       }
 
+      // Only update studentId if a non-empty value is provided
+      if (studentId && studentId.trim() !== "") {
+        updateData.studentId = studentId
+      }
+
       // Only update password if provided
       if (password) {
         updateData.password = password
-        
+
         // Update password in Firebase Authentication (synchronous - must complete)
         // This ensures the user can login immediately after password change
         try {
@@ -1405,7 +1585,7 @@ export const studentService = {
               password: password
             })
           })
-          
+
           if (!response.ok) {
             const errorData = await response.json()
             console.error('Failed to update password in Firebase Auth:', errorData.error)
@@ -1423,7 +1603,10 @@ export const studentService = {
 
       // Add optional fields if provided
       if (subject !== undefined) {
-        updateData.subject = subject
+        // Parse comma-separated subjects string into array
+        const subjectsArray = subject ? subject.split(',').map(s => s.trim()).filter(s => s) : []
+        updateData.subjects = subjectsArray // Save as array
+        updateData.subject = subject // Also save as legacy string for backward compatibility
       }
       if (status !== undefined) {
         updateData.status = status
@@ -1443,12 +1626,12 @@ export const studentService = {
     try {
       // Try filtered query first
       let students = []
-      
+
       try {
         const querySnapshot = await getDocs(
           query(collection(db, "users"), where("role", "==", "student"), orderBy("createdAt", "desc"))
         )
-        
+
         students = querySnapshot.docs.map((doc) => {
           const data = doc.data()
           return {
@@ -1462,7 +1645,7 @@ export const studentService = {
         // Fallback: Get all documents and filter manually (index may not exist)
         const allDocsQuery = query(collection(db, "users"))
         const allDocsSnapshot = await getDocs(allDocsQuery)
-        
+
         const allDocs = allDocsSnapshot.docs.map((doc) => {
           const data = doc.data()
           return {
@@ -1472,15 +1655,15 @@ export const studentService = {
             updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(),
           } as any
         })
-        
+
         // Filter for students
-        students = allDocs.filter((doc: any) => 
-          doc.role === "student" || 
-          doc.studentId || 
+        students = allDocs.filter((doc: any) =>
+          doc.role === "student" ||
+          doc.studentId ||
           (doc.firstName && doc.lastName && doc.email && !doc.departmentId)
         )
       }
-      
+
       return students
     } catch (error) {
       console.error("Error fetching students:", error)
@@ -1504,9 +1687,9 @@ export const statsService = {
     try {
       // Import evaluation results service
       const { evaluationResultsService } = await import("./evaluation-results-service")
-      
+
       const [professors, evaluationResults, students] = await Promise.all([
-        professorService.getAll(), 
+        professorService.getAll(),
         evaluationResultsService.getAll(),
         studentService.getAll()
       ])
@@ -1536,7 +1719,7 @@ export const statsService = {
         const totalStudentsForProfessor = totalStudents > 0 ? totalStudents : 1
 
         // Calculate completion rate (percentage of students who submitted)
-        const completionRate = totalStudentsForProfessor > 0 
+        const completionRate = totalStudentsForProfessor > 0
           ? Math.round((submittedCount / totalStudentsForProfessor) * 100)
           : 0
 
@@ -1562,22 +1745,22 @@ export const statsService = {
     try {
       const { evaluationResultsService } = await import("./evaluation-results-service")
       const evaluationResults = await evaluationResultsService.getAll()
-      
+
       // Count only submitted and complete evaluations
       // Check multiple possible values for evaluationStatus
       const submittedEvaluations = evaluationResults.filter((result) => {
         // Check evaluationStatus - can be "submitted", "complete", or other values
         const status = (result.evaluationStatus || "").toLowerCase().trim()
         const isSubmitted = status.includes("submit") || status === "complete" || status === "done"
-        
+
         // Check isComplete flag - must be explicitly true
         const isComplete = result.isComplete === true
-        
+
         // More lenient: accept if EITHER condition is met (not both)
         // This catches more evaluations that are actually complete
         return isSubmitted || isComplete
       })
-      
+
 
       // Count UNIQUE students who have completed at least one evaluation
       // Each student should only be counted once, regardless of how many professors they evaluated
@@ -1586,7 +1769,7 @@ export const statsService = {
       let studentsWithId = 0
       let studentsWithEmail = 0
       let studentsWithoutId = 0
-      
+
       submittedEvaluations.forEach((result) => {
         // Priority 1: Use sessionId if available (most reliable for identifying unique students)
         // sessionId is stored in responses array and identifies a student's evaluation session
@@ -1599,7 +1782,7 @@ export const statsService = {
         else if (result.studentId && result.studentId.trim() !== "") {
           uniqueStudents.add(result.studentId.trim())
           studentsWithId++
-        } 
+        }
         // Priority 3: Use studentEmail if available
         else if (result.studentEmail && result.studentEmail.trim() !== "") {
           uniqueStudents.add(result.studentEmail.trim().toLowerCase())
@@ -1615,12 +1798,12 @@ export const statsService = {
       })
 
       const uniqueStudentCount = uniqueStudents.size
-      
+
       // Warn if we don't have student identifiers
       if (studentsWithoutId === submittedEvaluations.length && submittedEvaluations.length > 0) {
         console.warn(`⚠️ No student identifiers found in evaluation results. Consider using sessionId, studentId, or studentEmail.`)
       }
-      
+
       return uniqueStudentCount
     } catch (error) {
       console.warn("Error getting total evaluation count:", error)
@@ -1654,6 +1837,90 @@ export const statsService = {
 
     return departmentStats
   },
+
+  // Calculate how many students have completed ALL their assigned evaluations
+  // Uses the same Eval Progress logic as student-management.tsx
+  async getFullCompletionCount(): Promise<{ completedStudents: number; totalStudentsWithAssignments: number }> {
+    try {
+      const { evaluationResultsService } = await import("./evaluation-results-service")
+
+      const [students, professors, evaluationResults] = await Promise.all([
+        studentService.getAll(),
+        professorService.getAll(),
+        evaluationResultsService.getAll()
+      ])
+
+      // Filter only submitted/complete evaluations
+      const submittedResults = evaluationResults.filter(
+        (result) => result.isComplete || result.evaluationStatus === 'submitted'
+      )
+
+      // Filter active professors only
+      const activeProfessors = professors.filter(
+        (prof) => prof.status !== 'resigned' && prof.status !== 'inactive'
+      )
+
+      let completedStudents = 0
+      let totalStudentsWithAssignments = 0
+
+      students.forEach((student: any) => {
+        // Get student's enrolled subjects
+        const studentSubjects: string[] = student.subjects && student.subjects.length > 0
+          ? student.subjects
+          : student.subject
+            ? [student.subject]
+            : []
+
+        if (studentSubjects.length === 0) return
+
+        const studentSection = student.section
+        if (!studentSection) return
+
+        // Find all professors assigned to this student (same logic as Eval Progress)
+        const assignedEvaluations: { professorId: string; subject: string }[] = []
+
+        activeProfessors.forEach((prof: any) => {
+          const profSubjectSections = prof.subjectSections || []
+
+          profSubjectSections.forEach((ss: any) => {
+            const subjectMatch = studentSubjects.some(
+              (s: string) => s.toLowerCase().trim() === ss.subject.toLowerCase().trim()
+            )
+            const sectionMatch = (ss.sections || []).some(
+              (sec: string) => sec.toLowerCase().trim() === studentSection.toLowerCase().trim()
+            )
+
+            if (subjectMatch && sectionMatch) {
+              assignedEvaluations.push({ professorId: prof.id, subject: ss.subject })
+            }
+          })
+        })
+
+        // Skip students with no assigned professors
+        if (assignedEvaluations.length === 0) return
+
+        totalStudentsWithAssignments++
+
+        // Check if student completed ALL assigned evaluations
+        const allComplete = assignedEvaluations.every(({ professorId }) => {
+          return submittedResults.some((er) => {
+            const emailMatch = er.studentEmail?.toLowerCase() === student.email?.toLowerCase()
+            const profMatch = er.professorId === professorId
+            return emailMatch && profMatch
+          })
+        })
+
+        if (allComplete) {
+          completedStudents++
+        }
+      })
+
+      return { completedStudents, totalStudentsWithAssignments }
+    } catch (error) {
+      console.error("Error calculating full completion count:", error)
+      return { completedStudents: 0, totalStudentsWithAssignments: 0 }
+    }
+  },
 }
 
 // Evaluation deadline operations
@@ -1672,17 +1939,17 @@ export const evaluationDeadlineService = {
       })
 
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
-      
+
       // Check if document exists
       const deadlineDoc = await getDoc(deadlineRef)
       const exists = deadlineDoc.exists()
-      
+
       console.log("🔵 Deadline document exists:", exists)
-      
+
       // Convert dates to Firestore Timestamp
       const startTimestamp = Timestamp.fromDate(startDate)
       const endTimestamp = Timestamp.fromDate(endDate)
-      
+
       const deadlineData = {
         startDate: startTimestamp,
         endDate: endTimestamp,
@@ -1690,21 +1957,21 @@ export const evaluationDeadlineService = {
         updatedAt: Timestamp.now(),
         ...(exists ? {} : { createdAt: Timestamp.now() }),
       }
-      
+
       console.log("🔵 Deadline data to save:", {
         startDate: startTimestamp.toDate().toISOString(),
         endDate: endTimestamp.toDate().toISOString(),
         isActive,
       })
-      
+
       if (exists) {
         // Update existing document - Reset evaluation results for new evaluation period
         console.log("🔵 Updating existing deadline document...")
         console.log("🔄 Resetting evaluation results for new evaluation period...")
-        
+
         // Reset all evaluation results when deadline is updated
         await this.resetEvaluationResults()
-        
+
         await updateDoc(deadlineRef, deadlineData)
         console.log("✅ Deadline updated successfully and evaluation results reset")
       } else {
@@ -1713,7 +1980,7 @@ export const evaluationDeadlineService = {
         await setDoc(deadlineRef, deadlineData)
         console.log("✅ Deadline created successfully")
       }
-      
+
       // Verify the save by reading it back immediately
       await new Promise(resolve => setTimeout(resolve, 100)) // Small delay to ensure write completes
       const verifyDoc = await getDoc(deadlineRef)
@@ -1726,7 +1993,7 @@ export const evaluationDeadlineService = {
           endDate: verifiedEnd?.toISOString(),
           isActive: data.isActive,
         })
-        
+
         // Double-check that the dates match what we tried to save
         if (verifiedStart && verifiedEnd) {
           const startDiff = Math.abs(verifiedStart.getTime() - startDate.getTime())
@@ -1739,7 +2006,7 @@ export const evaluationDeadlineService = {
         console.error("❌ Verification failed: Document does not exist after save")
         throw new Error("Failed to verify deadline was saved - document does not exist")
       }
-      
+
       return DEADLINE_DOC_ID
     } catch (error) {
       console.error("❌ Error creating/updating evaluation deadline:", error)
@@ -1757,12 +2024,12 @@ export const evaluationDeadlineService = {
       console.log("🔵 Fetching all deadlines from Firestore...")
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
       const deadlineDoc = await getDoc(deadlineRef)
-      
+
       if (!deadlineDoc.exists()) {
         console.log("🔵 No deadline document found in getAll()")
         return []
       }
-      
+
       const data = deadlineDoc.data()
       const deadline = {
         id: deadlineDoc.id,
@@ -1772,14 +2039,14 @@ export const evaluationDeadlineService = {
         createdAt: data.createdAt?.toDate?.() || new Date(),
         updatedAt: data.updatedAt?.toDate?.() || new Date(),
       } as EvaluationDeadline
-      
+
       console.log("✅ Fetched deadline in getAll():", {
         id: deadline.id,
         startDate: deadline.startDate.toISOString(),
         endDate: deadline.endDate.toISOString(),
         isActive: deadline.isActive,
       })
-      
+
       return [deadline]
     } catch (error) {
       console.error("❌ Error fetching evaluation deadlines:", error)
@@ -1796,26 +2063,26 @@ export const evaluationDeadlineService = {
       console.log("🔵 Fetching active deadline from Firestore...")
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
       const deadlineDoc = await getDoc(deadlineRef)
-      
+
       if (!deadlineDoc.exists()) {
         console.log("🔵 No deadline document found")
         return null
       }
-      
+
       const data = deadlineDoc.data()
-      
+
       console.log("🔵 Deadline document data:", {
         isActive: data.isActive,
         startDate: data.startDate?.toDate?.()?.toISOString(),
         endDate: data.endDate?.toDate?.()?.toISOString(),
       })
-      
+
       // Only return if isActive is true
       if (!data.isActive) {
         console.log("🔵 Deadline is not active")
         return null
       }
-      
+
       const deadline = {
         id: deadlineDoc.id,
         startDate: data.startDate?.toDate?.() || new Date(data.startDate),
@@ -1824,14 +2091,14 @@ export const evaluationDeadlineService = {
         createdAt: data.createdAt?.toDate?.() || new Date(),
         updatedAt: data.updatedAt?.toDate?.() || new Date(),
       } as EvaluationDeadline
-      
+
       console.log("✅ Active deadline found:", {
         id: deadline.id,
         startDate: deadline.startDate.toISOString(),
         endDate: deadline.endDate.toISOString(),
         isActive: deadline.isActive,
       })
-      
+
       return deadline
     } catch (error) {
       console.error("❌ Error fetching active evaluation deadline:", error)
@@ -1870,7 +2137,7 @@ export const evaluationDeadlineService = {
       // Just deactivate the single document
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
       const deadlineDoc = await getDoc(deadlineRef)
-      
+
       if (deadlineDoc.exists()) {
         await updateDoc(deadlineRef, {
           isActive: false,
@@ -1893,32 +2160,32 @@ export const evaluationDeadlineService = {
   async resetEvaluationResults(): Promise<void> {
     try {
       console.log("🔄 Starting evaluation results reset...")
-      
+
       // Get all evaluation results
       const resultsSnapshot = await getDocs(collection(db, "evaluation_results"))
       const batchSize = 500 // Firestore batch limit
       const results = resultsSnapshot.docs
-      
+
       console.log(`🔄 Found ${results.length} evaluation results to delete`)
-      
+
       if (results.length === 0) {
         console.log("✅ No evaluation results to reset")
         return
       }
-      
+
       // Delete in batches
       for (let i = 0; i < results.length; i += batchSize) {
         const batch = writeBatch(db)
         const batchDocs = results.slice(i, i + batchSize)
-        
+
         batchDocs.forEach((doc) => {
           batch.delete(doc.ref)
         })
-        
+
         await batch.commit()
         console.log(`🔄 Deleted batch ${Math.floor(i / batchSize) + 1} (${batchDocs.length} documents)`)
       }
-      
+
       console.log(`✅ Successfully reset ${results.length} evaluation results`)
     } catch (error) {
       console.error("❌ Error resetting evaluation results:", error)
@@ -1931,7 +2198,7 @@ export const evaluationDeadlineService = {
     try {
       const activeDeadline = await this.getActive()
       if (!activeDeadline) return false
-      
+
       const now = new Date()
       return now >= activeDeadline.startDate && now <= activeDeadline.endDate
     } catch (error) {

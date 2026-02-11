@@ -20,7 +20,7 @@
  */
 
 // STEP 1: Import ng mga kailangan na components at functions
-import { useState, useMemo, useEffect } from "react" // React hooks para sa state management
+import React, { useState, useMemo, useEffect } from "react" // React hooks para sa state management
 import { Button } from "@/components/ui/button" // Button component
 import { Input } from "@/components/ui/input" // Input field component
 import { Label } from "@/components/ui/label" // Label component
@@ -62,14 +62,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table" // Table components
-import { Plus, Edit, Trash2, Search, Users, Info, MapPin, Mail, Calendar, ArrowLeft, FileSpreadsheet, Eye, X, BookOpen, GraduationCap, CheckCircle2, Circle, Upload, Loader2 } from "lucide-react" // Icons
+import { Plus, Edit, Trash2, Search, Users, Info, MapPin, Mail, Calendar, ArrowLeft, FileSpreadsheet, Eye, X, BookOpen, GraduationCap, CheckCircle2, Circle, Upload, Loader2, Pencil, PlusCircle, Trash } from "lucide-react" // Icons
+import { Progress } from "@/components/ui/progress" // Progress bar component
 import { professorService, departmentService } from "@/lib/database" // Database functions
+import { evaluationResultsService } from "@/lib/evaluation-results-service" // Evaluation results service
 import { parseExcelProfessors, type ParsedProfessor } from "@/lib/excel-parser" // Excel parser functions
 import { useFilters } from "@/hooks/use-filters" // Filter hook
 import { AdvancedFilters } from "@/components/filters/advanced-filters" // Filter component
 import { exportToCSV, exportToPDF, exportToDOCX, type ExportData } from "@/lib/export-utils" // Export functions
 import { useToast } from "@/hooks/use-toast" // Toast notification hook
 import { Toaster } from "@/components/ui/toaster" // Toast component
+import { sanitizeErrorMessage } from "@/lib/utils" // Helper function para sa pag-sanitize ng error messages
 import type { Professor, Department } from "@/lib/types" // Type definitions
 
 
@@ -100,13 +103,30 @@ export function ProfessorManagement({
   const [excelFile, setExcelFile] = useState<File | null>(null) // Excel file na napili
   const [isImporting, setIsImporting] = useState(false) // Loading state para sa import
   const [isReading, setIsReading] = useState(false) // Loading state para sa read
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 }) // Progress tracking para sa import
   const [previewData, setPreviewData] = useState<ParsedProfessor[]>([]) // Preview data
   const [previewErrors, setPreviewErrors] = useState<string[]>([]) // Preview errors
   const [professorsBySection, setProfessorsBySection] = useState<{ [section: string]: ParsedProfessor[] }>({}) // Grouped by section
   const [newProfessors, setNewProfessors] = useState<ParsedProfessor[]>([]) // New professors (non-duplicates)
   const [duplicateProfessors, setDuplicateProfessors] = useState<ParsedProfessor[]>([]) // Duplicate professors
   const [uploadingDepartmentId, setUploadingDepartmentId] = useState<string | null>(null) // Department na nag-upload ng image
+  const [uploadingProfessorId, setUploadingProfessorId] = useState<string | null>(null) // Professor na nag-upload ng image
   const [departmentsState, setDepartmentsState] = useState<Department[]>(departments) // Local state para sa departments
+  const [professorsState, setProfessorsState] = useState<Professor[]>(initialProfessors) // Local state para sa professors
+  const [professorImageUrls, setProfessorImageUrls] = useState<Record<string, string | null>>({}) // Cache ng professor images from MEGA
+  const [departmentImageUrls, setDepartmentImageUrls] = useState<Record<string, string | null>>({}) // Cache ng department images from MEGA
+
+  // State variables para sa pag-edit ng subjects & sections
+  const [isEditSubjectsDialogOpen, setIsEditSubjectsDialogOpen] = useState(false) // Para sa popup ng pag-edit ng subjects
+  const [editingSubjectSections, setEditingSubjectSections] = useState<Array<{ subject: string; sectionsText: string }>>([]) // Subjects at sections na ine-edit (sectionsText is raw text)
+  const [isSavingSubjects, setIsSavingSubjects] = useState(false) // Loading state para sa save
+
+  // State variables para sa evaluation statistics (student count by section)
+  const [evaluationStats, setEvaluationStats] = useState<{
+    totalStudents: number
+    sectionBreakdown: { section: string; count: number }[]
+  } | null>(null)
+  const [isLoadingStats, setIsLoadingStats] = useState(false) // Loading state para sa stats
 
   // STEP 8: State variables para sa form ng pag-add/edit ng professor
   const [formData, setFormData] = useState({
@@ -114,16 +134,41 @@ export function ProfessorManagement({
     email: "", // Email ng professor
     department: "", // Department ng professor
     password: "", // Password ng professor
-    status: "active" as "active" | "inactive", // Status ng professor
+    status: "active" as "active" | "inactive" | "resigned" | "retired", // Status ng professor
   })
 
   const { applyFilters, filters } = useFilters() // Filter functions
   const { toast } = useToast() // Toast notification
 
+  // Helper function para sa pagkuha ng image URL ng professor
+  // Priority: profilePictureUrl > imageUrl > cached professorImageUrls > placeholder
+  const getProfessorImageUrl = (professor: Professor): string => {
+    // Check profilePictureUrl first (highest priority)
+    if (professor.profilePictureUrl) {
+      return professor.profilePictureUrl
+    }
+    // Check imageUrl second
+    if (professor.imageUrl) {
+      return professor.imageUrl
+    }
+    // Check cached image from MEGA third
+    if (professorImageUrls[professor.id]) {
+      return professorImageUrls[professor.id]
+    }
+    // Fallback to placeholder
+    return "/placeholder-user.jpg"
+  }
+
   // Update departments state when props change
   useEffect(() => {
     setDepartmentsState(departments)
   }, [departments])
+
+  // Update professors state when props change (important for refresh)
+  useEffect(() => {
+    setProfessors(initialProfessors)
+    setProfessorsState(initialProfessors)
+  }, [initialProfessors])
 
   // Function para sa pag-upload ng department image
   const handleDepartmentImageUpload = async (
@@ -132,7 +177,7 @@ export function ProfessorManagement({
     departmentName: string
   ) => {
     e.stopPropagation() // Prevent card click
-    
+
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -163,7 +208,7 @@ export function ProfessorManagement({
     if (!dept) {
       toast({
         title: "Department not found",
-        description: `Department with ID "${departmentId}" not found. Please refresh the page.`,
+        description: "The selected department was not found. Please refresh the page.",
         variant: "destructive",
       })
       return
@@ -190,22 +235,24 @@ export function ProfessorManagement({
         throw new Error(errorMsg)
       }
 
-      // Update local departments state immediately for instant UI feedback
-      const updatedDepartments = departmentsState.map(dept =>
-        dept.id === departmentId
-          ? { ...dept, imageUrl: data.imageUrl }
-          : dept
-      )
-      setDepartmentsState(updatedDepartments)
+      // Also update local cache for immediate display
+      if (data.imageUrl) {
+        setDepartmentImageUrls(prev => ({
+          ...prev,
+          [departmentName]: data.imageUrl
+        }))
 
-      // Also update props departments if needed
-      if (departments.find(d => d.id === departmentId)) {
-        // Department exists in props, will be updated by refresh
+        // Update local departments state
+        setDepartmentsState(prev => prev.map(dept =>
+          dept.id === departmentId
+            ? { ...dept, imageUrl: data.imageUrl }
+            : dept
+        ))
       }
 
       toast({
         title: "Image uploaded successfully",
-        description: `Profile picture for ${departmentName} has been updated.`,
+        description: `Profile picture for ${departmentName} has been saved to database.`,
       })
 
       // Refresh departments from server to ensure consistency
@@ -221,9 +268,10 @@ export function ProfessorManagement({
         }
       }
     } catch (error) {
-      const errorMessage = (error as Error).message || "Failed to upload image. Please try again."
-      
-      // Show detailed error to user
+      // Sanitize error message to remove sensitive data
+      const errorMessage = sanitizeErrorMessage(error)
+
+      // Show sanitized error to user
       toast({
         title: "Upload Failed",
         description: errorMessage,
@@ -232,6 +280,127 @@ export function ProfessorManagement({
       })
     } finally {
       setUploadingDepartmentId(null)
+      // Reset file input
+      e.target.value = ''
+    }
+  }
+
+  // Function para sa pag-upload ng professor image
+  const handleProfessorImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    professorId: string,
+    professorName: string
+  ) => {
+    e.stopPropagation() // Prevent card click
+
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+    if (!validImageTypes.includes(file.type)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload an image file (JPEG, PNG, GIF, or WebP).",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024 // 5MB
+    if (file.size > maxSize) {
+      toast({
+        title: "File too large",
+        description: "Maximum file size is 5MB.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate professor exists
+    const prof = professorsState.find(p => p.id === professorId) || professors.find(p => p.id === professorId)
+    if (!prof) {
+      toast({
+        title: "Professor not found",
+        description: "The selected professor was not found. Please refresh the page.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setUploadingProfessorId(professorId)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('professorId', professorId)
+      formData.append('professorName', professorName)
+
+      const response = await fetch('/api/upload-professor-image', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        // Show detailed error message from API
+        const errorMsg = data.message || data.error || 'Failed to upload image'
+        throw new Error(errorMsg)
+      }
+
+      // Also update local cache for immediate display
+      if (data.imageUrl) {
+        setProfessorImageUrls(prev => ({
+          ...prev,
+          [professorId]: data.imageUrl
+        }))
+
+        // Update local professors state with profilePictureUrl
+        setProfessorsState(prev => prev.map(prof =>
+          prof.id === professorId
+            ? { ...prof, profilePictureUrl: data.imageUrl }
+            : prof
+        ))
+        setProfessors(prev => prev.map(prof =>
+          prof.id === professorId
+            ? { ...prof, profilePictureUrl: data.imageUrl }
+            : prof
+        ))
+      }
+
+      toast({
+        title: "Image uploaded successfully",
+        description: `Profile picture for ${professorName} has been saved to database.`,
+      })
+
+      // Refresh professors from server to ensure consistency
+      if (onRefresh) {
+        onRefresh()
+      } else {
+        // If no onRefresh, manually fetch updated professors
+        try {
+          const updatedProfs = await professorService.getAll()
+          setProfessorsState(updatedProfs)
+          setProfessors(updatedProfs)
+        } catch (error) {
+          console.error('Failed to refresh professors:', error)
+        }
+      }
+    } catch (error) {
+      // Sanitize error message to remove sensitive data
+      const errorMessage = sanitizeErrorMessage(error)
+
+      // Show sanitized error to user
+      toast({
+        title: "Upload Failed",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 5000, // Show longer for important errors
+      })
+    } finally {
+      setUploadingProfessorId(null)
       // Reset file input
       e.target.value = ''
     }
@@ -308,7 +477,7 @@ export function ProfessorManagement({
     try {
       const dept = departments.find(d => d.name === departmentName)
       if (dept) return dept.id
-      
+
       // If not found in departments list, try to find in Firestore
       const allDepts = await departmentService.getAll()
       const found = allDepts.find(d => d.name === departmentName)
@@ -373,7 +542,7 @@ export function ProfessorManagement({
 
     // Show first letter of department name instead of icon
     const firstLetter = departmentName.charAt(0).toUpperCase()
-    
+
     return (
       <span className={`${currentSize} ${className} font-bold text-blue-600`}>
         {firstLetter}
@@ -383,9 +552,22 @@ export function ProfessorManagement({
 
 
   // STEP 18: Function para sa pag-show ng professor info
-  const showProfessorInfo = (professor: Professor) => {
+  const showProfessorInfo = async (professor: Professor) => {
     setSelectedProfessorInfo(professor) // I-set ang professor info
     setIsInfoDialogOpen(true) // I-open ang info dialog
+    setEvaluationStats(null) // Reset previous stats
+
+    // Fetch evaluation statistics for this professor
+    setIsLoadingStats(true)
+    try {
+      const stats = await evaluationResultsService.getEvaluationStatsByProfessor(professor.id)
+      setEvaluationStats(stats)
+    } catch (error) {
+      console.error("Error fetching evaluation stats:", error)
+      setEvaluationStats({ totalStudents: 0, sectionBreakdown: [] })
+    } finally {
+      setIsLoadingStats(false)
+    }
   }
 
   // STEP 21: Function para sa pag-add ng bagong professor
@@ -463,14 +645,29 @@ export function ProfessorManagement({
 
     try {
       // I-update ang professor sa database
+      // Parameter order: id, name, email, departmentName, imageUrl, password, status
+      // Pass current imageUrl to preserve it, only update password if provided
       await professorService.update(
         editingProfessor.id,
         formData.name,
         formData.email,
         formData.department,
-        formData.password || undefined,
-        formData.status, // I-include ang status
+        editingProfessor.imageUrl, // Preserve existing imageUrl (5th parameter)
+        formData.password || undefined, // Password (6th parameter)
+        formData.status, // Status (7th parameter)
       )
+
+      // Also update subject sections if there are any valid entries
+      // Convert sectionsText to sections array for saving
+      const validSubjectSections = editingSubjectSections
+        .filter(ss => ss.subject.trim() !== '')
+        .map(ss => ({
+          subject: ss.subject,
+          sections: ss.sectionsText.split(',').map(s => s.trim()).filter(s => s)
+        }))
+      if (validSubjectSections.length > 0) {
+        await professorService.updateSubjectSections(editingProfessor.id, validSubjectSections)
+      }
 
       // Gumawa ng updated professor object
       const updatedProfessor = {
@@ -479,6 +676,8 @@ export function ProfessorManagement({
         email: formData.email,
         departmentName: formData.department,
         status: formData.status, // I-include ang status sa updated object
+        subjectSections: validSubjectSections,
+        subjects: validSubjectSections.map(ss => ss.subject),
         updatedAt: new Date(),
       }
 
@@ -487,6 +686,7 @@ export function ProfessorManagement({
       setIsEditDialogOpen(false) // I-close ang edit dialog
       setEditingProfessor(null) // I-reset ang editing professor
       setFormData({ name: "", email: "", department: "", password: "", status: "active" }) // I-reset ang form
+      setEditingSubjectSections([]) // Reset subject sections
 
       // I-show ang success toast message
       toast({
@@ -496,15 +696,19 @@ export function ProfessorManagement({
       })
     } catch (error) {
       console.error("Error updating professor:", error)
+      // Sanitize error message to remove sensitive data
       let errorMessage = "Failed to update professor. "
       if ((error as any)?.code === "permission-denied") {
         errorMessage += "Permission denied - please check your authentication status."
       } else if ((error as any)?.code === "unavailable") {
         errorMessage += "Database unavailable - please check your internet connection."
-      } else if ((error as any)?.message) {
-        errorMessage += `Error: ${(error as any).message}`
       } else {
-        errorMessage += "Please try again or contact support."
+        const sanitized = sanitizeErrorMessage(error)
+        if (sanitized !== "An error occurred. Please try again.") {
+          errorMessage += sanitized
+        } else {
+          errorMessage += "Please try again or contact support."
+        }
       }
       toast({
         title: "Update Failed",
@@ -548,7 +752,7 @@ export function ProfessorManagement({
 
       toast({
         title: "Delete Failed",
-        description: `Failed to delete ${professorName}. ${(error as any)?.message || "Please try again."}`,
+        description: `Failed to delete professor. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     }
@@ -587,7 +791,7 @@ export function ProfessorManagement({
       console.error("Error deleting all professors:", error)
       toast({
         title: "Delete Failed",
-        description: `Failed to delete all professors. ${(error as any)?.message || "Please try again."}`,
+        description: `Failed to delete all professors. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     }
@@ -607,8 +811,31 @@ export function ProfessorManagement({
       email: professor.email,
       department: professor.departmentName,
       password: "", // Hindi i-fill ang password para sa security
-      status: professorStatus as "active" | "inactive", // I-set ang status o default sa "active"
+      status: professorStatus as "active" | "inactive" | "resigned" | "retired", // I-set ang status o default sa "active"
     })
+
+    // Initialize subject sections for editing (convert to sectionsText format)
+    const prof = professor as any
+    if (prof.subjectSections && prof.subjectSections.length > 0) {
+      setEditingSubjectSections(prof.subjectSections.map((ss: any) => ({
+        subject: ss.subject,
+        sectionsText: Array.isArray(ss.sections) ? ss.sections.join(', ') : ''
+      })))
+    } else {
+      // Convert legacy format to new format
+      const subjectsArray = prof.subjects && prof.subjects.length > 0
+        ? prof.subjects
+        : prof.subject
+          ? [prof.subject]
+          : []
+
+      if (subjectsArray.length > 0) {
+        const sectionsText = prof.handledSection || ''
+        setEditingSubjectSections(subjectsArray.map((subj: string) => ({ subject: subj, sectionsText })))
+      } else {
+        setEditingSubjectSections([{ subject: '', sectionsText: '' }])
+      }
+    }
 
     setIsEditDialogOpen(true) // I-open ang edit dialog
   }
@@ -736,7 +963,7 @@ export function ProfessorManagement({
       console.error("Error reading Excel:", error)
       toast({
         title: "Read Failed",
-        description: `Failed to read Excel file: ${(error as any)?.message || "Unknown error occurred"}`,
+        description: `Failed to read Excel file. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     } finally {
@@ -763,7 +990,8 @@ export function ProfessorManagement({
         email: string
         departmentName: string
         password: string
-        subject?: string
+        subjects?: string[] // Array of subjects (supports multiple subjects)
+        subjectSections?: Array<{ subject: string; sections: string[] }> // Paired subjects with sections
         handledSection?: string
       }> = []
 
@@ -774,7 +1002,8 @@ export function ProfessorManagement({
           email: professor.email,
           departmentName: professor.department,
           password: professor.password,
-          subject: professor.subject,
+          subjects: professor.subjects, // Array of subjects
+          subjectSections: professor.subjectSections, // Paired subjects with sections
           handledSection: professor.handledSection,
         }))
       } else if (previewData.length > 0) {
@@ -788,7 +1017,8 @@ export function ProfessorManagement({
           email: professor.email,
           departmentName: professor.department,
           password: professor.password,
-          subject: professor.subject,
+          subjects: professor.subjects, // Array of subjects
+          subjectSections: professor.subjectSections, // Paired subjects with sections
           handledSection: professor.handledSection,
         }))
       } else {
@@ -816,7 +1046,8 @@ export function ProfessorManagement({
           email: professor.email,
           departmentName: professor.department,
           password: professor.password,
-          subject: professor.subject,
+          subjects: professor.subjects, // Array of subjects
+          subjectSections: professor.subjectSections, // Paired subjects with sections
           handledSection: professor.handledSection,
         }))
       }
@@ -835,7 +1066,13 @@ export function ProfessorManagement({
       console.log(`Importing ${professorsToImport.length} professors...`)
 
       // Import only new professors (duplicates already filtered)
-      const importResult = await professorService.importProfessors(professorsToImport)
+      // Pass progress callback to track import progress
+      const importResult = await professorService.importProfessors(
+        professorsToImport,
+        (current, total) => {
+          setImportProgress({ current, total })
+        }
+      )
 
       console.log("Import result:", importResult)
 
@@ -884,11 +1121,12 @@ export function ProfessorManagement({
       console.error("Error importing professors:", error)
       toast({
         title: "Import Failed",
-        description: `Failed to import professors: ${(error as any)?.message || "Unknown error occurred"}`,
+        description: `Failed to import professors. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     } finally {
       setIsImporting(false)
+      setImportProgress({ current: 0, total: 0 }) // Reset progress
     }
   }
 
@@ -928,48 +1166,6 @@ export function ProfessorManagement({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Delete All Button */}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="destructive"
-                disabled={professors.length === 0}
-                size="sm"
-                className="flex-1 sm:flex-none h-8 px-2 sm:px-3 text-[10px] sm:text-xs whitespace-nowrap"
-              >
-                <Trash2 className="mr-1.5 h-3 w-3 sm:mr-2 sm:h-3.5 sm:w-3.5" />
-                Delete All
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete All Professors</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete ALL {professors.length} professor{professors.length !== 1 ? "s" : ""} from the system?
-                  <br /><br />
-                  <strong className="text-destructive">Warning:</strong> This action cannot be undone and will permanently delete:
-                  <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground mt-2 ml-2">
-                    <li>All professor profiles and authentication data</li>
-                    <li>All evaluation results and submissions</li>
-                    <li>All evaluation questions created by professors</li>
-                    <li>All posts and announcements created by professors</li>
-                    <li>All statistics and analytics data</li>
-                  </ul>
-                  <br />
-                  <strong className="text-destructive">This action cannot be undone!</strong>
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDeleteAllProfessors}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete All
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
           {/* Import Excel Dialog */}
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
@@ -1198,16 +1394,63 @@ export function ProfessorManagement({
                       <CardContent className="p-3 sm:p-4 lg:p-6">
                         {/* Professor info section */}
                         <div className="flex items-start gap-2 sm:gap-3 lg:gap-4 mb-3 sm:mb-4 lg:mb-6">
-                          <Avatar className="h-8 w-8 sm:h-10 sm:w-10 lg:h-14 lg:w-14 ring-2 ring-gray-300 flex-shrink-0">
-                            <AvatarImage src={`/placeholder-user.jpg`} alt={professor.name} />
-                            <AvatarFallback className="bg-gray-100 text-gray-800 text-xs sm:text-sm lg:text-lg font-bold">
-                              {professor.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")
-                                .toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
+                          <div className="relative group">
+                            <Avatar className="h-8 w-8 sm:h-10 sm:w-10 lg:h-14 lg:w-14 ring-2 ring-gray-300 flex-shrink-0 cursor-pointer" key={`prof-avatar-${professor.id}-${getProfessorImageUrl(professor)}`}>
+                              <AvatarImage
+                                src={getProfessorImageUrl(professor)}
+                                alt={professor.name}
+                                key={`prof-img-${professor.id}-${getProfessorImageUrl(professor)}`}
+                                onError={(e) => {
+                                  // If image fails to load, hide it and show fallback
+                                  console.warn(`Failed to load professor image for ${professor.name}:`, getProfessorImageUrl(professor))
+                                  e.currentTarget.style.display = 'none'
+                                  // Fallback will show automatically
+                                }}
+                                onLoad={() => {
+                                  // Image loaded successfully
+                                  console.log(`Professor image loaded for ${professor.name}`)
+                                }}
+                              />
+                              <AvatarFallback className="bg-gray-100 text-gray-800 text-xs sm:text-sm lg:text-lg font-bold">
+                                {professor.name
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                                  .toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            {uploadingProfessorId === professor.id ? (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full z-20">
+                                <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-white animate-spin" />
+                              </div>
+                            ) : (
+                              <>
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors rounded-full flex items-center justify-center z-10 pointer-events-none">
+                                  <Upload className="h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 rounded-full"
+                                  aria-label={`Upload profile picture for ${professor.name}`}
+                                  title={`Upload profile picture for ${professor.name}`}
+                                  onChange={(e) => {
+                                    const prof = professorsState.find(p => p.id === professor.id) || professors.find(p => p.id === professor.id)
+                                    if (prof) {
+                                      handleProfessorImageUpload(e, prof.id, professor.name)
+                                    } else {
+                                      toast({
+                                        title: "Professor not found",
+                                        description: "The selected professor was not found. Please refresh the page.",
+                                        variant: "destructive",
+                                      })
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </>
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 lg:gap-2 mb-1">
                               <h3 className="font-bold text-gray-900 text-sm sm:text-base lg:text-xl break-words">{professor.name}</h3>
@@ -1215,18 +1458,39 @@ export function ProfessorManagement({
                               {(() => {
                                 const professorStatus = (professor as any).status || "active"
                                 const isActive = professorStatus === "active"
+                                const isResigned = professorStatus === "resigned"
+                                const isInactive = professorStatus === "inactive"
+                                const isRetired = professorStatus === "retired"
+
+                                // Determine badge color based on status
+                                let badgeColorClass = "bg-green-600 text-white hover:bg-green-700" // Active (default)
+                                if (isInactive) {
+                                  badgeColorClass = "bg-red-600 text-white hover:bg-red-700"
+                                } else if (isResigned) {
+                                  badgeColorClass = "bg-amber-600 text-white hover:bg-amber-700"
+                                } else if (isRetired) {
+                                  badgeColorClass = "bg-gray-600 text-white hover:bg-gray-700"
+                                }
+
                                 return (
                                   <Badge
                                     variant={isActive ? "default" : "secondary"}
-                                    className={`text-[10px] sm:text-xs ${isActive
-                                      ? "bg-green-600 text-white hover:bg-green-700"
-                                      : "bg-red-600 text-white hover:bg-red-700"
-                                      }`}
+                                    className={`text-[10px] sm:text-xs ${badgeColorClass}`}
                                   >
                                     {isActive ? (
                                       <>
                                         <CheckCircle2 className="h-2.5 w-2.5 sm:h-3 sm:w-3 mr-1" />
                                         Active
+                                      </>
+                                    ) : isResigned ? (
+                                      <>
+                                        <Circle className="h-2.5 w-2.5 sm:h-3 sm:w-3 mr-1" />
+                                        Resigned
+                                      </>
+                                    ) : isRetired ? (
+                                      <>
+                                        <Circle className="h-2.5 w-2.5 sm:h-3 sm:w-3 mr-1" />
+                                        Retired
                                       </>
                                     ) : (
                                       <>
@@ -1277,48 +1541,7 @@ export function ProfessorManagement({
                             <Edit className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 sm:mr-2" />
                             Edit
                           </Button>
-                          {/* Delete confirmation dialog */}
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-gray-300 text-gray-700 hover:bg-red-50 hover:border-red-400 transition-all duration-200 bg-transparent min-h-[36px] sm:min-h-[40px]"
-                              >
-                                <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Professor Completely</AlertDialogTitle>
-                                <AlertDialogDescription className="space-y-3">
-                                  <p className="font-semibold text-destructive">
-                                    ⚠️ This will permanently delete ALL data associated with {professor.name}:
-                                  </p>
-                                  <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                                    <li>Professor profile and authentication data</li>
-                                    <li>All evaluation results and submissions</li>
-                                    <li>All evaluation questions created by this professor</li>
-                                    <li>All posts and announcements created by this professor</li>
-                                    <li>All statistics and analytics data</li>
-                                    <li>Email: {professor.email}</li>
-                                  </ul>
-                                  <p className="font-semibold text-destructive">
-                                    This action cannot be undone and will affect all related data in the system.
-                                  </p>
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDeleteProfessor(professor.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Delete All Data
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+
                         </div>
                       </CardContent>
                     </Card>
@@ -1355,15 +1578,17 @@ export function ProfessorManagement({
                   {/* Faculty header */}
                   <div className="flex items-center justify-between mb-3 sm:mb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                      <div 
+                      <div
                         className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-300 rounded-xl flex items-center justify-center shadow-lg border border-gray-200 flex-shrink-0 relative overflow-hidden group cursor-pointer"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {(() => {
                           const dept = departmentsState.find(d => d.name === departmentName)
-                          const imageUrl = dept?.imageUrl
+                          // Priority: database imageUrl first, then cached (for immediate display after upload)
+                          const cachedImageUrl = departmentImageUrls[departmentName]
+                          const imageUrl = dept?.imageUrl || cachedImageUrl
                           const isUploading = uploadingDepartmentId === dept?.id
-                          
+
                           if (isUploading) {
                             return (
                               <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-blue-200 z-20">
@@ -1371,39 +1596,41 @@ export function ProfessorManagement({
                               </div>
                             )
                           }
-                          
+
                           if (imageUrl) {
                             return (
-                              <img 
-                                src={imageUrl} 
+                              <img
+                                key={`dept-img-${departmentName}-${imageUrl}`}
+                                src={imageUrl}
                                 alt={departmentName}
                                 className="absolute inset-0 w-full h-full object-cover z-0"
                                 loading="lazy"
                                 onError={(e) => {
                                   // If uploaded image fails to load, fallback to default icon
-                                  console.error('Failed to load department image:', imageUrl)
+                                  console.warn(`Failed to load department image for ${departmentName}:`, imageUrl)
                                   e.currentTarget.style.display = 'none'
+                                  // Fallback icon will show automatically
                                 }}
                                 onLoad={() => {
                                   // Image loaded successfully
-                                  console.log('Department image loaded:', imageUrl)
+                                  console.log(`Department image loaded for ${departmentName}`)
                                 }}
                               />
                             )
                           }
-                          
+
                           return (
                             <div className="absolute inset-0 w-full h-full flex items-center justify-center z-0">
                               <DepartmentIcon departmentName={departmentName} size="large" className="" />
                             </div>
                           )
                         })()}
-                        
+
                         {/* Upload overlay - only visible on hover */}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center z-10 pointer-events-none">
                           <Upload className="h-4 w-4 sm:h-5 sm:w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
-                        
+
                         {/* File input - on top for clicking */}
                         <input
                           type="file"
@@ -1414,18 +1641,18 @@ export function ProfessorManagement({
                           onChange={(e) => {
                             // Try to find department in departmentsState first
                             let dept = departmentsState.find(d => d.name === departmentName)
-                            
+
                             // If not found, try in props departments
                             if (!dept) {
                               dept = departments.find(d => d.name === departmentName)
                             }
-                            
+
                             if (dept) {
                               handleDepartmentImageUpload(e, dept.id, departmentName)
                             } else {
                               toast({
                                 title: "Department not found",
-                                description: `Could not find department "${departmentName}". Please refresh the page.`,
+                                description: "The selected department was not found. Please refresh the page.",
                                 variant: "destructive",
                               })
                             }
@@ -1495,16 +1722,63 @@ export function ProfessorManagement({
             <div className="space-y-6 py-4">
               {/* Professor Avatar and Basic Info */}
               <div className="flex items-center gap-6">
-                <Avatar className="h-20 w-20 ring-4 ring-gray-200">
-                  <AvatarImage src="/placeholder-user.jpg" alt={selectedProfessorInfo.name} />
-                  <AvatarFallback className="bg-gray-100 text-gray-800 text-2xl font-bold">
-                    {selectedProfessorInfo.name
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative group">
+                  <Avatar className="h-20 w-20 ring-4 ring-gray-200 cursor-pointer" key={`info-avatar-${selectedProfessorInfo.id}-${getProfessorImageUrl(selectedProfessorInfo)}`}>
+                    <AvatarImage
+                      src={getProfessorImageUrl(selectedProfessorInfo)}
+                      alt={selectedProfessorInfo.name}
+                      key={`info-img-${selectedProfessorInfo.id}-${getProfessorImageUrl(selectedProfessorInfo)}`}
+                      onError={(e) => {
+                        // If image fails to load, hide it and show fallback
+                        console.warn(`Failed to load professor info image for ${selectedProfessorInfo.name}:`, getProfessorImageUrl(selectedProfessorInfo))
+                        e.currentTarget.style.display = 'none'
+                        // Fallback will show automatically
+                      }}
+                      onLoad={() => {
+                        // Image loaded successfully
+                        console.log(`Professor info image loaded for ${selectedProfessorInfo.name}`)
+                      }}
+                    />
+                    <AvatarFallback className="bg-gray-100 text-gray-800 text-2xl font-bold">
+                      {selectedProfessorInfo.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {uploadingProfessorId === selectedProfessorInfo.id ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full z-20">
+                      <Loader2 className="h-6 w-6 text-white animate-spin" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors rounded-full flex items-center justify-center z-10 pointer-events-none">
+                        <Upload className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20 rounded-full"
+                        aria-label={`Upload profile picture for ${selectedProfessorInfo.name}`}
+                        title={`Upload profile picture for ${selectedProfessorInfo.name}`}
+                        onChange={(e) => {
+                          const prof = professorsState.find(p => p.id === selectedProfessorInfo.id) || professors.find(p => p.id === selectedProfessorInfo.id)
+                          if (prof) {
+                            handleProfessorImageUpload(e, prof.id, selectedProfessorInfo.name)
+                          } else {
+                            toast({
+                              title: "Professor not found",
+                              description: "The selected professor was not found. Please refresh the page.",
+                              variant: "destructive",
+                            })
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </>
+                  )}
+                </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-2xl font-bold text-gray-900">{selectedProfessorInfo.name}</h3>
@@ -1512,15 +1786,39 @@ export function ProfessorManagement({
                     {(() => {
                       const professorStatus = (selectedProfessorInfo as any).status || "active"
                       const isActive = professorStatus === "active"
+                      const isResigned = professorStatus === "resigned"
+                      const isInactive = professorStatus === "inactive"
+                      const isRetired = professorStatus === "retired"
+
+                      // Determine badge color based on status
+                      let badgeColorClass = "bg-green-600 text-white hover:bg-green-700" // Active (default)
+                      if (isInactive) {
+                        badgeColorClass = "bg-red-600 text-white hover:bg-red-700"
+                      } else if (isResigned) {
+                        badgeColorClass = "bg-amber-600 text-white hover:bg-amber-700"
+                      } else if (isRetired) {
+                        badgeColorClass = "bg-gray-600 text-white hover:bg-gray-700"
+                      }
+
                       return (
                         <Badge
                           variant={isActive ? "default" : "secondary"}
-                          className={isActive ? "bg-green-600 text-white hover:bg-green-700" : "bg-red-600 text-white hover:bg-red-700"}
+                          className={badgeColorClass}
                         >
                           {isActive ? (
                             <>
                               <CheckCircle2 className="h-3 w-3 mr-1" />
                               Active
+                            </>
+                          ) : isResigned ? (
+                            <>
+                              <Circle className="h-3 w-3 mr-1" />
+                              Resigned
+                            </>
+                          ) : isRetired ? (
+                            <>
+                              <Circle className="h-3 w-3 mr-1" />
+                              Retired
                             </>
                           ) : (
                             <>
@@ -1555,26 +1853,166 @@ export function ProfessorManagement({
                   </div>
                 </div>
 
-                {(selectedProfessorInfo as any).subject && (
-                  <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                    <BookOpen className="h-5 w-5 text-indigo-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Subject</p>
-                      <p className="text-gray-900">{(selectedProfessorInfo as any).subject}</p>
-                    </div>
-                  </div>
-                )}
+                <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
+                  <BookOpen className="h-5 w-5 text-indigo-500 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-medium text-gray-700">Subjects & Handled Sections</p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
+                        onClick={() => {
+                          const prof = selectedProfessorInfo as any
+                          // Initialize with existing subjectSections or create from legacy data (using sectionsText format)
+                          if (prof.subjectSections && prof.subjectSections.length > 0) {
+                            setEditingSubjectSections(prof.subjectSections.map((ss: any) => ({
+                              subject: ss.subject,
+                              sectionsText: Array.isArray(ss.sections) ? ss.sections.join(', ') : ''
+                            })))
+                          } else {
+                            // Convert legacy format to new format
+                            const subjectsArray = prof.subjects && prof.subjects.length > 0
+                              ? prof.subjects
+                              : prof.subject
+                                ? [prof.subject]
+                                : []
 
-                {(selectedProfessorInfo as any).handledSection && (
-                  <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                    <GraduationCap className="h-5 w-5 text-teal-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Handled Section</p>
-                      <p className="text-gray-900">{(selectedProfessorInfo as any).handledSection}</p>
+                            if (subjectsArray.length > 0) {
+                              // Create subject sections from legacy data
+                              const sectionsText = prof.handledSection || ''
+                              setEditingSubjectSections(subjectsArray.map((subj: string) => ({ subject: subj, sectionsText })))
+                            } else {
+                              // Start with empty subject section
+                              setEditingSubjectSections([{ subject: '', sectionsText: '' }])
+                            }
+                          }
+                          setIsEditSubjectsDialogOpen(true)
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5 mr-1" />
+                        Edit
+                      </Button>
+                    </div>
+                    {(() => {
+                      // Check if there are subject-section pairs
+                      const prof = selectedProfessorInfo as any
+
+                      // Prefer subjectSections if available (new format)
+                      if (prof.subjectSections && prof.subjectSections.length > 0) {
+                        return (
+                          <div className="space-y-3">
+                            {prof.subjectSections.map((ss: { subject: string; sections: string[] }, idx: number) => (
+                              <div key={idx} className="bg-white p-3 rounded-md border border-gray-200">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <Badge variant="default" className="text-xs">
+                                    {ss.subject}
+                                  </Badge>
+                                </div>
+                                {ss.sections && ss.sections.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {ss.sections.map((section: string, sIdx: number) => (
+                                      <Badge key={sIdx} variant="outline" className="text-xs">
+                                        {section}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-500 text-xs">No sections assigned</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      }
+
+                      // Fallback to legacy format (separate subjects and handledSection)
+                      const subjectsArray = prof.subjects && prof.subjects.length > 0
+                        ? prof.subjects
+                        : prof.subject
+                          ? [prof.subject]
+                          : []
+
+                      if (subjectsArray.length === 0) {
+                        return <p className="text-gray-500 text-sm">No subjects assigned</p>
+                      }
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {subjectsArray.map((subj: string, idx: number) => (
+                              <Badge key={idx} variant="outline" className="text-sm">
+                                {subj}
+                              </Badge>
+                            ))}
+                          </div>
+                          {prof.handledSection && (
+                            <div className="mt-3 pt-3 border-t">
+                              <p className="text-xs text-gray-500 mb-1">Handled Sections:</p>
+                              <p className="text-sm text-gray-900">{prof.handledSection}</p>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Evaluation Statistics Section - Shows student count by section (anonymous) */}
+          {selectedProfessorInfo && (
+            <div className="mt-6 pt-4 border-t">
+              <div className="flex items-center gap-2 mb-4">
+                <Users className="h-5 w-5 text-purple-500" />
+                <h3 className="font-semibold text-gray-800">Evaluation Statistics</h3>
+              </div>
+
+              {isLoadingStats ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+                  <span className="ml-2 text-gray-500">Loading statistics...</span>
+                </div>
+              ) : evaluationStats ? (
+                <div className="space-y-4">
+                  {/* Total Students Card */}
+                  <div className="p-4 bg-purple-50 rounded-lg border border-purple-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-purple-700">Total Students Evaluated</p>
+                        <p className="text-2xl font-bold text-purple-900">{evaluationStats.totalStudents}</p>
+                      </div>
+                      <GraduationCap className="h-10 w-10 text-purple-400" />
                     </div>
                   </div>
-                )}
-              </div>
+
+                  {/* Section Breakdown */}
+                  {evaluationStats.sectionBreakdown.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-700">Breakdown by Section:</p>
+                      <div className="grid gap-2">
+                        {evaluationStats.sectionBreakdown.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <span className="text-sm font-medium text-gray-800">{item.section}</span>
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                              {item.count} student{item.count !== 1 ? 's' : ''}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No evaluations yet</p>
+                  )}
+
+                  <p className="text-xs text-gray-400 mt-3">
+                    * Student names are kept anonymous for privacy
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic">Unable to load statistics</p>
+              )}
             </div>
           )}
 
@@ -1635,7 +2073,7 @@ export function ProfessorManagement({
               <Label htmlFor="edit-status">Status</Label>
               <Select
                 value={formData.status}
-                onValueChange={(value: "active" | "inactive") => setFormData({ ...formData, status: value })}
+                onValueChange={(value: "active" | "inactive" | "resigned" | "retired") => setFormData({ ...formData, status: value })}
               >
                 <SelectTrigger id="edit-status" className="w-full">
                   <SelectValue placeholder="Select status" />
@@ -1643,8 +2081,75 @@ export function ProfessorManagement({
                 <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="resigned">Resigned</SelectItem>
+                  <SelectItem value="retired">Retired</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Subjects & Handled Sections */}
+            <div className="grid gap-3 pt-4 border-t mt-2">
+              <Label className="text-base font-semibold">Subjects & Handled Sections</Label>
+
+              <div className="space-y-6">
+                {editingSubjectSections.map((ss, idx) => (
+                  <div key={idx} className="space-y-3 pb-4 border-b last:border-b-0">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium text-gray-700">Subject {idx + 1}</Label>
+                      {editingSubjectSections.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            setEditingSubjectSections(prev => prev.filter((_, i) => i !== idx))
+                          }}
+                        >
+                          <Trash className="h-4 w-4 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label className="text-sm text-gray-600">Subject Name</Label>
+                      <Input
+                        value={ss.subject}
+                        onChange={(e) => {
+                          setEditingSubjectSections(prev => prev.map((item, i) =>
+                            i === idx ? { ...item, subject: e.target.value } : item
+                          ))
+                        }}
+                        placeholder="e.g., Database Management"
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label className="text-sm text-gray-600">Handled Sections (comma-separated)</Label>
+                      <Input
+                        value={ss.sectionsText}
+                        onChange={(e) => {
+                          setEditingSubjectSections(prev => prev.map((item, i) =>
+                            i === idx ? { ...item, sectionsText: e.target.value } : item
+                          ))
+                        }}
+                        placeholder="e.g., 1A, 1B, 2C, 3A"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full mt-2"
+                onClick={() => {
+                  setEditingSubjectSections(prev => [...prev, { subject: '', sectionsText: '' }])
+                }}
+              >
+                <PlusCircle className="h-4 w-4 mr-2" />
+                Add Another Subject
+              </Button>
             </div>
           </div>
           {/* Dialog footer */}
@@ -1657,7 +2162,150 @@ export function ProfessorManagement({
         </DialogContent>
       </Dialog>
 
-      {/* Preview Excel Data - Window Popup */}
+      {/* Edit Subjects & Sections Dialog */}
+      <Dialog open={isEditSubjectsDialogOpen} onOpenChange={setIsEditSubjectsDialogOpen}>
+        <DialogContent className="mx-4 max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Subjects & Handled Sections</DialogTitle>
+            <DialogDescription>
+              Update the subjects and their handled sections for {selectedProfessorInfo?.name}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {editingSubjectSections.map((ss, idx) => (
+              <div key={idx} className="p-4 border rounded-lg bg-gray-50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Subject {idx + 1}</Label>
+                  {editingSubjectSections.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => {
+                        setEditingSubjectSections(prev => prev.filter((_, i) => i !== idx))
+                      }}
+                    >
+                      <Trash className="h-3.5 w-3.5 mr-1" />
+                      Remove
+                    </Button>
+                  )}
+                </div>
+
+                <Input
+                  value={ss.subject}
+                  onChange={(e) => {
+                    setEditingSubjectSections(prev => prev.map((item, i) =>
+                      i === idx ? { ...item, subject: e.target.value } : item
+                    ))
+                  }}
+                  placeholder="Enter subject name (e.g., Database Management)"
+                />
+
+                <div>
+                  <Label className="text-xs text-gray-500 mb-2 block">
+                    Sections (comma-separated, e.g., 1A, 1B, 2C)
+                  </Label>
+                  <Input
+                    value={ss.sectionsText}
+                    onChange={(e) => {
+                      setEditingSubjectSections(prev => prev.map((item, i) =>
+                        i === idx ? { ...item, sectionsText: e.target.value } : item
+                      ))
+                    }}
+                    placeholder="1A, 1B, 2C"
+                  />
+                </div>
+              </div>
+            ))}
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setEditingSubjectSections(prev => [...prev, { subject: '', sectionsText: '' }])
+              }}
+            >
+              <PlusCircle className="h-4 w-4 mr-2" />
+              Add Another Subject
+            </Button>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditSubjectsDialogOpen(false)}
+              disabled={isSavingSubjects}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!selectedProfessorInfo) return
+
+                // Filter out empty subjects and convert sectionsText to sections array
+                const validSubjectSections = editingSubjectSections
+                  .filter(ss => ss.subject.trim() !== '')
+                  .map(ss => ({
+                    subject: ss.subject,
+                    sections: ss.sectionsText.split(',').map(s => s.trim()).filter(s => s)
+                  }))
+
+                setIsSavingSubjects(true)
+                try {
+                  await professorService.updateSubjectSections(selectedProfessorInfo.id, validSubjectSections)
+
+                  // Update local state
+                  const updatedProfessor = {
+                    ...selectedProfessorInfo,
+                    subjectSections: validSubjectSections,
+                    subjects: validSubjectSections.map(ss => ss.subject),
+                  }
+
+                  setProfessors(prev => prev.map(p =>
+                    p.id === selectedProfessorInfo.id ? updatedProfessor : p
+                  ))
+                  setProfessorsState(prev => prev.map(p =>
+                    p.id === selectedProfessorInfo.id ? updatedProfessor : p
+                  ))
+                  setSelectedProfessorInfo(updatedProfessor)
+
+                  toast({
+                    title: "Subjects Updated",
+                    description: `Successfully updated subjects and sections for ${selectedProfessorInfo.name}`,
+                  })
+
+                  setIsEditSubjectsDialogOpen(false)
+
+                  if (onRefresh) {
+                    onRefresh()
+                  }
+                } catch (error) {
+                  console.error("Error updating subjects:", error)
+                  toast({
+                    title: "Update Failed",
+                    description: `Failed to update subjects. ${sanitizeErrorMessage(error)}`,
+                    variant: "destructive",
+                  })
+                } finally {
+                  setIsSavingSubjects(false)
+                }
+              }}
+              disabled={isSavingSubjects}
+            >
+              {isSavingSubjects ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {previewData.length > 0 && (
         <>
           {/* Backdrop with blur */}
@@ -1716,14 +2364,32 @@ export function ProfessorManagement({
                 </div>
               </div>
 
-              {/* Loading Overlay */}
+              {/* Loading Overlay with Progress Bar */}
               {isImporting && (
                 <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
-                  <div className="flex flex-col items-center gap-4">
+                  <div className="flex flex-col items-center gap-4 w-full max-w-md px-6">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                    <div className="text-center">
-                      <p className="font-semibold">Importing Professors...</p>
-                      <p className="text-sm text-muted-foreground">Please wait while we save the data</p>
+                    <div className="text-center w-full">
+                      <p className="font-semibold text-lg mb-2">Importing Professors...</p>
+                      {importProgress.total > 0 ? (
+                        <>
+                          <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
+                            <span>Processing professors...</span>
+                            <span className="font-medium">
+                              {importProgress.current} / {importProgress.total}
+                            </span>
+                          </div>
+                          <Progress
+                            value={(importProgress.current / importProgress.total) * 100}
+                            className="h-2 w-full"
+                          />
+                          <p className="text-xs text-muted-foreground mt-2">
+                            {Math.round((importProgress.current / importProgress.total) * 100)}% complete
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Please wait while we save the data</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1776,10 +2442,44 @@ export function ProfessorManagement({
                                 <div className="text-sm">{professor.department}</div>
                               </TableCell>
                               <TableCell>
-                                <div className="text-sm">{professor.subject || '-'}</div>
+                                {/* Display subjects as badges */}
+                                {professor.subjects && professor.subjects.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {professor.subjects.slice(0, 2).map((subj, idx) => (
+                                      <Badge key={idx} variant="outline" className="text-xs">
+                                        {subj}
+                                      </Badge>
+                                    ))}
+                                    {professor.subjects.length > 2 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{professor.subjects.length - 2} more
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">-</span>
+                                )}
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline">{professor.handledSection || '-'}</Badge>
+                                {/* Display handled sections with subject pairing */}
+                                {professor.subjectSections && professor.subjectSections.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {professor.subjectSections.slice(0, 2).map((ss, idx) => (
+                                      <Badge key={idx} variant="outline" className="text-xs" title={`${ss.subject}: ${ss.sections.join(', ')}`}>
+                                        {ss.sections.slice(0, 2).join(', ')}{ss.sections.length > 2 ? '...' : ''}
+                                      </Badge>
+                                    ))}
+                                    {professor.subjectSections.length > 2 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{professor.subjectSections.length - 2} more
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ) : professor.handledSection ? (
+                                  <Badge variant="outline">{professor.handledSection}</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground text-sm">-</span>
+                                )}
                               </TableCell>
                               <TableCell>
                                 <div className="text-sm">{professor.email}</div>

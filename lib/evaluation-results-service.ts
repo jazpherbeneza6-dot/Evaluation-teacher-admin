@@ -1,4 +1,4 @@
-import { collection, getDocs, query, orderBy, onSnapshot, addDoc, Timestamp, where, getDocs as getDocsQuery } from "firebase/firestore"
+import { collection, getDocs, query, orderBy, onSnapshot, addDoc, Timestamp, where, getDocs as getDocsQuery, deleteDoc, doc } from "firebase/firestore"
 import { db } from "./firebase"
 import type { EvaluationResult, EvaluationResultStats, EvaluationQuestion } from "./types"
 import { evaluationDeadlineService } from "./database"
@@ -29,7 +29,7 @@ export const evaluationResultsService = {
         if (activeDeadline) {
           const now = new Date()
           const endDate = new Date(activeDeadline.endDate)
-          
+
           if (now > endDate) {
             throw new Error("Evaluation period has ended. Submissions are no longer accepted.")
           } else if (now < new Date(activeDeadline.startDate)) {
@@ -39,7 +39,7 @@ export const evaluationResultsService = {
           throw new Error("No evaluation period is currently active.")
         }
       }
-      
+
       const docRef = await addDoc(collection(db, "evaluation_results"), {
         ...result,
         createdAt: Timestamp.now(),
@@ -55,17 +55,17 @@ export const evaluationResultsService = {
     try {
       // Use simple query without orderBy to avoid index requirement
       const simpleQuery = collection(db, "evaluation_results")
-      
+
       // Try without orderBy first (no index needed)
       let querySnapshot = await getDocs(simpleQuery)
 
       const results = querySnapshot.docs.map((doc) => {
         const data = doc.data()
-        
+
         // Try multiple possible field names for student identifier
         const studentEmail = data.studentEmail || data.student_email || data.studentEmailAddress || data.email || undefined
         const studentId = data.studentId || data.student_id || data.studentID || data.userId || data.user_id || undefined
-        
+
         // Extract sessionId from responses array (if available)
         // sessionId is stored in responses[0].sessionId based on Firestore structure
         const responses = data.responses || []
@@ -80,7 +80,7 @@ export const evaluationResultsService = {
             }
           }
         }
-        
+
         return {
           id: doc.id,
           departmentName: data.departmentName || "",
@@ -94,7 +94,7 @@ export const evaluationResultsService = {
           sessionId: sessionId,
           responses: responses.map((r: any) => ({
             answer: r.answer || "",
-            options: r.options || [],
+            options: Array.isArray(r.options) ? r.options : [],
             questionId: r.questionId || "",
             questionText: r.questionText || "",
             questionType: r.questionType || "text",
@@ -105,7 +105,21 @@ export const evaluationResultsService = {
         } as EvaluationResult
       })
 
-      
+      console.log(`✅ Loaded ${results.length} evaluation results from evaluation_results collection`)
+      if (results.length > 0) {
+        const sampleResult = results[0]
+        console.log(`📊 Sample result:`, {
+          professorName: sampleResult.professorName,
+          responsesCount: sampleResult.responses?.length || 0,
+          firstResponse: sampleResult.responses?.[0] ? {
+            answer: sampleResult.responses[0].answer,
+            answerType: typeof sampleResult.responses[0].answer,
+            options: sampleResult.responses[0].options,
+            questionType: sampleResult.responses[0].questionType
+          } : null
+        })
+      }
+
       return results
     } catch (error) {
       console.error("❌ Error fetching evaluation results:", error)
@@ -121,11 +135,11 @@ export const evaluationResultsService = {
         console.log("🔍 Fallback query executed. Docs count:", fallbackSnapshot.docs.length)
         const results = fallbackSnapshot.docs.map((doc) => {
           const data = doc.data()
-          
+
           // Try multiple possible field names for student identifier
           const studentEmail = data.studentEmail || data.student_email || data.studentEmailAddress || data.email || undefined
           const studentId = data.studentId || data.student_id || data.studentID || data.userId || data.user_id || undefined
-          
+
           // Extract sessionId from responses array (if available)
           const responses = data.responses || []
           // Try to get sessionId from top-level first, then from responses array
@@ -139,7 +153,7 @@ export const evaluationResultsService = {
               }
             }
           }
-          
+
           return {
             id: doc.id,
             departmentName: data.departmentName || "",
@@ -176,18 +190,18 @@ export const evaluationResultsService = {
     try {
       // Use simple query without orderBy to avoid index requirement
       const collectionRef = collection(db, "evaluation_results")
-      
+
       const unsubscribe = onSnapshot(
         collectionRef,
         (querySnapshot) => {
           try {
             const results = querySnapshot.docs.map((doc) => {
               const data = doc.data()
-              
+
               // Try multiple possible field names for student identifier
               const studentEmail = data.studentEmail || data.student_email || data.studentEmailAddress || data.email || undefined
               const studentId = data.studentId || data.student_id || data.studentID || data.userId || data.user_id || undefined
-              
+
               // Extract sessionId from responses array (if available)
               const responses = data.responses || []
               let sessionId = data.sessionId || undefined
@@ -199,9 +213,9 @@ export const evaluationResultsService = {
                   }
                 }
               }
-              
+
               return {
-              id: doc.id,
+                id: doc.id,
                 departmentName: data.departmentName || "",
                 evaluationStatus: data.evaluationStatus || "pending",
                 isComplete: data.isComplete || false,
@@ -265,7 +279,7 @@ export const evaluationResultsService = {
       if (!errorMessage.includes('FIRESTORE') || !errorMessage.includes('INTERNAL ASSERTION FAILED')) {
         console.error("Error setting up real-time listener:", error)
       }
-      return () => {}
+      return () => { }
     }
   },
 
@@ -347,6 +361,89 @@ export const evaluationResultsService = {
     }
   },
 
+  // Get evaluation statistics by student section for a specific professor
+  // Returns total unique students and breakdown by section
+  async getEvaluationStatsByProfessor(professorId: string): Promise<{
+    totalStudents: number
+    sectionBreakdown: { section: string; count: number }[]
+  }> {
+    try {
+      // Get all evaluation results for this professor
+      const evaluationsSnapshot = await getDocs(
+        query(
+          collection(db, "evaluation_results"),
+          where("professorId", "==", professorId)
+        )
+      )
+
+      if (evaluationsSnapshot.empty) {
+        return { totalStudents: 0, sectionBreakdown: [] }
+      }
+
+      // Get unique student identifiers from evaluations
+      const studentIdentifiers = new Set<string>()
+      const studentEmails: string[] = []
+
+      evaluationsSnapshot.docs.forEach((doc) => {
+        const data = doc.data()
+        // Use sessionId, studentId, or studentEmail as unique identifier
+        const identifier = data.sessionId || data.studentId || data.studentEmail
+        if (identifier && !studentIdentifiers.has(identifier)) {
+          studentIdentifiers.add(identifier)
+          if (data.studentEmail) {
+            studentEmails.push(data.studentEmail)
+          }
+        }
+      })
+
+      // Now fetch student data to get sections
+      const sectionCounts = new Map<string, number>()
+
+      // Fetch students by email (in batches of 10 due to Firestore 'in' limitation)
+      for (let i = 0; i < studentEmails.length; i += 10) {
+        const batch = studentEmails.slice(i, i + 10)
+        if (batch.length > 0) {
+          try {
+            const studentsSnapshot = await getDocs(
+              query(
+                collection(db, "users"),
+                where("email", "in", batch)
+              )
+            )
+
+            studentsSnapshot.docs.forEach((doc) => {
+              const studentData = doc.data()
+              const section = studentData.section || "Unknown Section"
+              sectionCounts.set(section, (sectionCounts.get(section) || 0) + 1)
+            })
+          } catch (batchError) {
+            console.warn("Error fetching student batch:", batchError)
+          }
+        }
+      }
+
+      // If we couldn't match students by email, count as "Unknown Section"
+      const matchedCount = Array.from(sectionCounts.values()).reduce((sum, count) => sum + count, 0)
+      const unmatchedCount = studentIdentifiers.size - matchedCount
+      if (unmatchedCount > 0) {
+        sectionCounts.set("Unknown Section", (sectionCounts.get("Unknown Section") || 0) + unmatchedCount)
+      }
+
+      // Convert to array and sort by count (descending)
+      const sectionBreakdown = Array.from(sectionCounts.entries())
+        .map(([section, count]) => ({ section, count }))
+        .sort((a, b) => b.count - a.count)
+
+      return {
+        totalStudents: studentIdentifiers.size,
+        sectionBreakdown
+      }
+    } catch (error) {
+      console.error("Error fetching evaluation stats by professor:", error)
+      return { totalStudents: 0, sectionBreakdown: [] }
+    }
+  },
+
   // Get evaluation results by department
   getByDepartment(results: EvaluationResult[], departmentName: string): EvaluationResult[] {
     return results.filter((result) => result.departmentName === departmentName)
@@ -389,10 +486,10 @@ export const evaluationResultsService = {
     // Process all evaluation results
     results.forEach((result) => {
       // Count all evaluations that are submitted OR complete (more lenient check)
-      const isValidEvaluation = 
-        (result.evaluationStatus && result.evaluationStatus.toLowerCase().includes("submit")) || 
+      const isValidEvaluation =
+        (result.evaluationStatus && result.evaluationStatus.toLowerCase().includes("submit")) ||
         result.isComplete === true
-      
+
       if (isValidEvaluation) {
         const professorKey = result.professorId
 
@@ -417,19 +514,33 @@ export const evaluationResultsService = {
         // Count Strongly Agree and Agree responses from Likert Scale questions
         result.responses?.forEach((response) => {
           if (response.questionType === "Likert Scale" && response.answer) {
-            const answer = response.answer.toString().trim()
             profData.totalResponses++
 
-            // Count based on answer text
-            if (answer === "Strongly Agree") {
+            // Parse answer - can be either index (number/string) or text
+            let answerText = ""
+            const answerValue = response.answer.toString().trim()
+
+            // Check if answer is a numeric index (0, 1, 2, 3, etc.)
+            const answerIndex = parseInt(answerValue, 10)
+            if (!isNaN(answerIndex) && response.options && Array.isArray(response.options) && response.options.length > answerIndex) {
+              // Answer is an index, get the text from options array
+              answerText = response.options[answerIndex]?.trim() || ""
+            } else {
+              // Answer is already text
+              answerText = answerValue
+            }
+
+            // Count based on answer text (case-insensitive)
+            const normalizedAnswer = answerText.toLowerCase()
+            if (normalizedAnswer === "strongly agree") {
               profData.stronglyAgreeCount++
-            } else if (answer === "Agree") {
+            } else if (normalizedAnswer === "agree") {
               profData.agreeCount++
-            } else if (answer === "Neutral" || answer === "Neither Agree nor Disagree") {
+            } else if (normalizedAnswer === "neutral" || normalizedAnswer === "neither agree nor disagree") {
               profData.neutralCount++
-            } else if (answer === "Disagree") {
+            } else if (normalizedAnswer === "disagree") {
               profData.disagreeCount++
-            } else if (answer === "Strongly Disagree") {
+            } else if (normalizedAnswer === "strongly disagree") {
               profData.stronglyDisagreeCount++
             }
           }
@@ -442,20 +553,20 @@ export const evaluationResultsService = {
       .map((prof) => {
         // Calculate positive response count (Strongly Agree + Agree)
         const positiveResponses = prof.stronglyAgreeCount + prof.agreeCount
-        
+
         // Calculate performance score as percentage of positive responses
         const performanceScore = prof.totalResponses > 0
           ? Math.round((positiveResponses / prof.totalResponses) * 100)
           : 0
 
         // Calculate average rating (weighted: SA=5, A=4, N=3, D=2, SD=1)
-        const totalWeightedScore = 
+        const totalWeightedScore =
           (prof.stronglyAgreeCount * 5) +
           (prof.agreeCount * 4) +
           (prof.neutralCount * 3) +
           (prof.disagreeCount * 2) +
           (prof.stronglyDisagreeCount * 1)
-        
+
         const averageRating = prof.totalResponses > 0
           ? Math.round((totalWeightedScore / prof.totalResponses) * 100) / 100
           : 0
@@ -496,10 +607,10 @@ export const evaluationResultsService = {
   // Normalize section name to standard category name
   normalizeCategoryName(section: string | undefined): string {
     if (!section) return "Other"
-    
+
     const normalized = section.trim()
     const lower = normalized.toLowerCase()
-    
+
     // Map various section name formats to standard category names
     if (lower.includes("instructional") && lower.includes("competence")) {
       return "Instructional Competence"
@@ -516,7 +627,7 @@ export const evaluationResultsService = {
     if (lower.includes("professionalism") || (lower.includes("personal") && lower.includes("qualities"))) {
       return "Professionalism & Personal Qualities"
     }
-    
+
     return normalized
   },
 
@@ -592,7 +703,7 @@ export const evaluationResultsService = {
           if (response.questionType === "Likert Scale" && response.answer) {
             // Try to find category by questionId first
             let category = questionToCategoryMap.get(response.questionId || "")
-            
+
             // If not found, try by questionText
             if (!category && response.questionText) {
               category = questionTextToCategoryMap.get(response.questionText.trim().toLowerCase())
@@ -625,16 +736,31 @@ export const evaluationResultsService = {
             const profData = categoryMap.get(professorKey)!
             profData.totalResponses++
 
-            const answer = response.answer.toString().trim()
-            if (answer === "Strongly Agree") {
+            // Parse answer - can be either index (number/string) or text
+            let answerText = ""
+            const answerValue = response.answer.toString().trim()
+
+            // Check if answer is a numeric index (0, 1, 2, 3, etc.)
+            const answerIndex = parseInt(answerValue, 10)
+            if (!isNaN(answerIndex) && response.options && Array.isArray(response.options) && response.options.length > answerIndex) {
+              // Answer is an index, get the text from options array
+              answerText = response.options[answerIndex]?.trim() || ""
+            } else {
+              // Answer is already text
+              answerText = answerValue
+            }
+
+            // Count based on answer text (case-insensitive)
+            const normalizedAnswer = answerText.toLowerCase()
+            if (normalizedAnswer === "strongly agree") {
               profData.stronglyAgreeCount++
-            } else if (answer === "Agree") {
+            } else if (normalizedAnswer === "agree") {
               profData.agreeCount++
-            } else if (answer === "Neutral" || answer === "Neither Agree nor Disagree") {
+            } else if (normalizedAnswer === "neutral" || normalizedAnswer === "neither agree nor disagree") {
               profData.neutralCount++
-            } else if (answer === "Disagree") {
+            } else if (normalizedAnswer === "disagree") {
               profData.disagreeCount++
-            } else if (answer === "Strongly Disagree") {
+            } else if (normalizedAnswer === "strongly disagree") {
               profData.stronglyDisagreeCount++
             }
           }
@@ -698,5 +824,43 @@ export const evaluationResultsService = {
     })
 
     return result
+  },
+
+  // Clear all evaluation results - called when a new evaluation deadline is set
+  // This resets the data so professors see fresh statistics for the new period
+  async clearAllEvaluationResults(): Promise<{ success: boolean; deletedCount: number; error?: string }> {
+    try {
+      const collectionRef = collection(db, "evaluation_results")
+      const querySnapshot = await getDocs(collectionRef)
+
+      if (querySnapshot.empty) {
+        return { success: true, deletedCount: 0 }
+      }
+
+      let deletedCount = 0
+      const deletePromises: Promise<void>[] = []
+
+      // Delete all documents in batches
+      querySnapshot.docs.forEach((docSnapshot) => {
+        deletePromises.push(
+          deleteDoc(doc(db, "evaluation_results", docSnapshot.id))
+            .then(() => {
+              deletedCount++
+            })
+        )
+      })
+
+      await Promise.all(deletePromises)
+
+      console.log(`Successfully cleared ${deletedCount} evaluation results`)
+      return { success: true, deletedCount }
+    } catch (error) {
+      console.error("Error clearing evaluation results:", error)
+      return {
+        success: false,
+        deletedCount: 0,
+        error: error instanceof Error ? error.message : "Unknown error occurred"
+      }
+    }
   },
 }

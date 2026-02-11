@@ -32,7 +32,9 @@ export interface Professor {
   password?: string // Password (optional para sa security - hindi naka-show sa UI)
   departmentId: string // ID ng department na kinabibilangan
   departmentName: string // Pangalan ng department
-  status?: "active" | "inactive" // Status ng professor (active o inactive)
+  imageUrl?: string // URL ng uploaded image (optional)
+  profilePictureUrl?: string // Profile picture URL (optional, can be base64 data URI)
+  status?: "active" | "inactive" | "resigned" | "retired" // Status ng professor (active, inactive, resigned, o retired)
   createdAt: Date // Kailan ginawa
   updatedAt: Date // Kailan na-update
 }
@@ -187,6 +189,7 @@ export interface EvaluationResultResponse {
   questionId: string // ID ng question
   questionText: string // Text ng question
   questionType: "Likert Scale" | "text" // Type ng question
+  section?: string // Section/category ng question (optional, from responses)
   sessionId?: string // Session ID ng student (optional - para sa unique student identification)
 }
 

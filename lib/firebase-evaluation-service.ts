@@ -16,6 +16,7 @@ export interface FirebaseEvaluationResult {
     questionId: string
     questionText: string
     questionType: string
+    section?: string
   }[]
   createdAt?: Date
 }
@@ -93,7 +94,7 @@ export class FirebaseEvaluationService {
       if (activeDeadline) {
         const now = new Date()
         const endDate = new Date(activeDeadline.endDate)
-        
+
         if (now > endDate) {
           throw new Error("Evaluation period has ended. Submissions are no longer accepted.")
         } else if (now < new Date(activeDeadline.startDate)) {
@@ -103,7 +104,7 @@ export class FirebaseEvaluationService {
         throw new Error("No evaluation period is currently active.")
       }
     }
-    
+
     const docRef = await addDoc(collection(db, this.collectionName), {
       ...result,
       createdAt: Timestamp.now(),

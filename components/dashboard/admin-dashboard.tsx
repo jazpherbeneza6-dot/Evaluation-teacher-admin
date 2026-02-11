@@ -19,7 +19,7 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
 import { FilterProvider } from "@/hooks/use-filters"
-import { statsService, evaluationQuestionService, professorService, departmentService } from "@/lib/database"
+import { statsService, evaluationQuestionService, professorService, departmentService, studentService } from "@/lib/database"
 import { DashboardHeader } from "./dashboard-header"
 import { DashboardSidebar, type ActiveView } from "./dashboard-sidebar"
 import { DashboardOverview } from "./dashboard-overview"
@@ -36,43 +36,59 @@ import {
   type EvaluationSection
 } from "@/lib/excel-parser"
 import { StudentManagement } from "./student-management"
+import { EvaluationHistoryManagement } from "./evaluation-history-management"
 import type { EvaluationStats, EvaluationQuestion, Professor, Department } from "@/lib/types"
 
 export function AdminDashboard() {
   const { user } = useAuth()
-  const [activeView, setActiveView] = useState<ActiveView>("overview")
+  // Load activeView from localStorage on mount, default to "overview"
+  const [activeView, setActiveView] = useState<ActiveView>(() => {
+    if (typeof window !== 'undefined') {
+      const savedView = localStorage.getItem('adminDashboardActiveView') as ActiveView | null
+      // Validate that saved view is a valid ActiveView
+      const validViews: ActiveView[] = ["overview", "professors", "evaluation-questions", "evaluation-duration", "evaluation-results", "students"]
+      if (savedView && validViews.includes(savedView)) {
+        return savedView
+      }
+    }
+    return "overview"
+  })
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [stats, setStats] = useState<EvaluationStats[]>([])
   const [evaluationQuestions, setEvaluationQuestions] = useState<EvaluationQuestion[]>([])
   const [professors, setProfessors] = useState<Professor[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [totalEvaluations, setTotalEvaluations] = useState<number>(0)
+  const [totalStudents, setTotalStudents] = useState<number>(0)
+  const [completedStudents, setCompletedStudents] = useState<number>(0)
 
   // Ito ang function para i-refresh ang data sa dashboard
   // Para updated palagi ang information na nakikita mo!
   const refreshData = async () => {
     try {
-      console.log(" Refreshing dashboard data...")
+
       // Kukuha ng bagong data mula sa database:
       // 1. Stats - mga numbers at charts
       // 2. Questions - listahan ng evaluation questions
       // 3. Professors - listahan ng teachers
       // 4. Total evaluations - actual count from Firebase
-      const [statsData, questionsData, professorsData, departmentsData, totalEvals] = await Promise.all([
+      const [statsData, questionsData, professorsData, departmentsData, totalEvals, studentsData, fullCompletion] = await Promise.all([
         statsService.calculateStats(),
         evaluationQuestionService.getAll(),
         professorService.getAll(),
         departmentService.getAll(),
         statsService.getTotalEvaluationCount(),
+        studentService.getAll(),
+        statsService.getFullCompletionCount(),
       ])
-
-      console.log(" Data refreshed - Questions:", questionsData.length, "Total Evaluations:", totalEvals, "Departments:", departmentsData.length)
 
       setStats(statsData)
       setEvaluationQuestions(questionsData)
       setProfessors(professorsData)
       setDepartments(departmentsData)
       setTotalEvaluations(totalEvals)
+      setTotalStudents(studentsData.length)
+      setCompletedStudents(fullCompletion.completedStudents)
     } catch (error) {
       console.error("Error refreshing dashboard data:", (error as any)?.message || error)
     }
@@ -81,13 +97,15 @@ export function AdminDashboard() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log("Loading dashboard data...")
-        const [statsData, questionsData, professorsData, departmentsData, totalEvals] = await Promise.all([
+
+        const [statsData, questionsData, professorsData, departmentsData, totalEvals, studentsData, fullCompletion] = await Promise.all([
           statsService.calculateStats(),
           evaluationQuestionService.getAll(),
           professorService.getAll(),
           departmentService.getAll(),
           statsService.getTotalEvaluationCount(),
+          studentService.getAll(),
+          statsService.getFullCompletionCount(),
         ])
 
         setStats(statsData)
@@ -95,6 +113,8 @@ export function AdminDashboard() {
         setProfessors(professorsData)
         setDepartments(departmentsData)
         setTotalEvaluations(totalEvals)
+        setTotalStudents(studentsData.length)
+        setCompletedStudents(fullCompletion.completedStudents)
       } catch (error) {
         console.error("Error loading dashboard data:", (error as any)?.message || error)
       }
@@ -104,18 +124,22 @@ export function AdminDashboard() {
 
     const dataRefreshInterval = setInterval(async () => {
       try {
-        const [newStats, newQuestions, newProfessors, newDepartments, newTotalEvals] = await Promise.all([
+        const [newStats, newQuestions, newProfessors, newDepartments, newTotalEvals, newStudentsData, newFullCompletion] = await Promise.all([
           statsService.calculateStats(),
           evaluationQuestionService.getAll(),
           professorService.getAll(),
           departmentService.getAll(),
           statsService.getTotalEvaluationCount(),
+          studentService.getAll(),
+          statsService.getFullCompletionCount(),
         ])
         setStats(newStats)
         setEvaluationQuestions(newQuestions)
         setProfessors(newProfessors)
         setDepartments(newDepartments)
         setTotalEvaluations(newTotalEvals)
+        setTotalStudents(newStudentsData.length)
+        setCompletedStudents(newFullCompletion.completedStudents)
       } catch (error) {
         console.error("Error refreshing stats:", (error as any)?.message || error)
       }
@@ -137,7 +161,7 @@ export function AdminDashboard() {
   const renderContent = () => {
     switch (activeView) {
       case "overview":
-        return <DashboardOverview stats={stats} departments={departments} professors={professors} totalEvaluations={totalEvaluations} />
+        return <DashboardOverview stats={stats} departments={departments} professors={professors} totalEvaluations={totalEvaluations} totalStudents={totalStudents} completedStudents={completedStudents} />
       case "professors":
         return <ProfessorManagement professors={professors} departments={departments} onRefresh={refreshData} />
       case "evaluation-questions":
@@ -154,8 +178,10 @@ export function AdminDashboard() {
         return <EvaluationResultsManagement questions={evaluationQuestions} professors={professors} />
       case "students":
         return <StudentManagement onRefresh={refreshData} />
+      case "evaluation-history":
+        return <EvaluationHistoryManagement questions={evaluationQuestions} professors={professors} />
       default:
-        return <DashboardOverview stats={stats} departments={departments} professors={professors} totalEvaluations={totalEvaluations} />
+        return <DashboardOverview stats={stats} departments={departments} professors={professors} totalEvaluations={totalEvaluations} totalStudents={totalStudents} completedStudents={completedStudents} />
     }
   }
 
@@ -169,10 +195,14 @@ export function AdminDashboard() {
         <DashboardHeader user={user} onMenuClick={() => setIsMobileMenuOpen(true)} />
         <div className="flex">
           {/* Sidebar - dito ang navigation para sa iba't ibang pages */}
-          <DashboardSidebar 
-            activeView={activeView} 
+          <DashboardSidebar
+            activeView={activeView}
             onViewChange={(view) => {
               setActiveView(view)
+              // Save activeView to localStorage para ma-restore pagkatapos ng refresh
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('adminDashboardActiveView', view)
+              }
               setIsMobileMenuOpen(false)
             }}
             isMobileOpen={isMobileMenuOpen}

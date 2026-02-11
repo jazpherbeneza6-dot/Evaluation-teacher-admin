@@ -118,7 +118,7 @@ export async function readExcelFile(file: File): Promise<ExcelParseResult> {
 export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuestionParseResult {
   const questions: ParsedQuestion[] = []
   const sections: EvaluationSection[] = []
-  
+
   let questionNumber = 0
 
   // Process each sheet
@@ -129,19 +129,21 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
     // We specifically look for the 5 evaluation sections
     let sectionColumns = sheet.headers.filter(header => {
       const headerText = header.toString()
-      // Match exact section headers with percentages
-      return (
+      // Match exact section headers with percentages OR Comments
+      const isCommentSection = headerText.toLowerCase().includes('comment')
+      const isStandardSection = (
         headerText.includes('Instructional Competence') ||
         headerText.includes('Classroom Management') ||
         headerText.includes('Professionalism') ||
         headerText.includes('Student Support') ||
         headerText.includes('Research')
       ) && (
-        headerText.includes('40%') ||
-        headerText.includes('20%') ||
-        headerText.includes('10%') ||
-        headerText.includes('%')
-      )
+          headerText.includes('40%') ||
+          headerText.includes('20%') ||
+          headerText.includes('10%') ||
+          headerText.includes('%')
+        )
+      return isStandardSection || isCommentSection
     })
 
     console.log(`Section columns found (exact match):`, sectionColumns)
@@ -160,7 +162,8 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
     if (sectionColumns.length === 0) {
       const lenientColumns = sheet.headers.filter(header => {
         const headerText = header.toString().toLowerCase()
-        return (
+        const isCommentSection = headerText.includes('comment')
+        const isStandardSection = (
           headerText.includes('competence') ||
           headerText.includes('management') ||
           headerText.includes('professionalism') ||
@@ -170,6 +173,7 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
           headerText.includes('classroom') ||
           headerText.includes('student')
         ) && headerText.includes('%')
+        return isStandardSection || isCommentSection
       })
       sectionColumns.push(...lenientColumns)
       console.log(`Found columns with lenient matching:`, sectionColumns)
@@ -199,11 +203,11 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
     // Process each section column
     sectionColumns.forEach(columnName => {
       const columnHeader = columnName.toString()
-      
+
       // Extract section name and weight from column header
       let sectionName = columnHeader
       let sectionWeight = '0%'
-      
+
       // Extract weight from header (e.g., "Instructional Competence (40%)" -> "40%")
       const weightMatch = columnHeader.match(/\((\d+%)\)/)
       if (weightMatch) {
@@ -226,52 +230,52 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
       // Process each row in this column
       sheet.data.forEach((row, rowIndex) => {
         const cellValue = row[columnName]
-        
+
         // More lenient check - accept any non-empty value
         if (cellValue !== null && cellValue !== undefined) {
           const questionText = String(cellValue).trim()
-          
+
           // Skip empty strings
           if (questionText.length === 0) {
             return
           }
-          
+
           const lowerText = questionText.toLowerCase().trim()
 
           // Skip only if it's clearly a header or non-question content (exact matches or very short)
           // Be more lenient - only skip if the entire text matches these patterns
           const isHeader = (
-              // Exact matches for headers
-              lowerText === 'section' ||
-              lowerText === 'part' ||
-              lowerText === 'category' ||
-              lowerText === 'weight' ||
-              lowerText === 'evaluation' ||
-              lowerText === 'criteria' ||
-              lowerText === 'assessment' ||
-              lowerText === 'rating scale' ||
-              lowerText === 'scale' ||
-              // Very short text that's likely a header
-              (lowerText.length < 15 && (
-                lowerText.startsWith('section') ||
-                lowerText.startsWith('part') ||
-                lowerText.startsWith('category') ||
-                lowerText.startsWith('weight:') ||
-                lowerText === 'evaluation criteria' ||
-                lowerText === 'rating scale'
-              )) ||
-              // Single letter items (like "A.", "B.", etc.)
-              lowerText.match(/^[a-z]\s*[\.\)]\s*$/)
+            // Exact matches for headers
+            lowerText === 'section' ||
+            lowerText === 'part' ||
+            lowerText === 'category' ||
+            lowerText === 'weight' ||
+            lowerText === 'evaluation' ||
+            lowerText === 'criteria' ||
+            lowerText === 'assessment' ||
+            lowerText === 'rating scale' ||
+            lowerText === 'scale' ||
+            // Very short text that's likely a header
+            (lowerText.length < 15 && (
+              lowerText.startsWith('section') ||
+              lowerText.startsWith('part') ||
+              lowerText.startsWith('category') ||
+              lowerText.startsWith('weight:') ||
+              lowerText === 'evaluation criteria' ||
+              lowerText === 'rating scale'
+            )) ||
+            // Single letter items (like "A.", "B.", etc.)
+            lowerText.match(/^[a-z]\s*[\.\)]\s*$/)
           )
 
           // Only skip Likert scale options if they're exact matches (not if they appear in question text)
           const isLikertScale = (
-              lowerText === 'strongly agree' ||
-              lowerText === 'strongly disagree' ||
-              lowerText === 'agree' ||
-              lowerText === 'disagree' ||
-              lowerText === 'undecided' ||
-              lowerText === 'neutral'
+            lowerText === 'strongly agree' ||
+            lowerText === 'strongly disagree' ||
+            lowerText === 'agree' ||
+            lowerText === 'disagree' ||
+            lowerText === 'undecided' ||
+            lowerText === 'neutral'
           )
 
           // Skip only if it's a header or Likert scale options
@@ -346,7 +350,7 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
       console.log(`   ${idx + 1}. Row ${q.rowIndex}: ${q.questionText.substring(0, 80)}${q.questionText.length > 80 ? '...' : ''}`)
     })
   })
-  
+
   // Log total count for verification
   console.log(`\n✅ TOTAL QUESTIONS PARSED: ${questions.length}`)
   console.log(`📊 Breakdown by section:`)
@@ -397,11 +401,11 @@ export function validateParsedQuestions(questions: ParsedQuestion[]): {
   for (const question of questions) {
     const questionText = question.questionText.trim()
     const lowerText = questionText.toLowerCase()
-    
+
     // More lenient validation - only exclude obvious non-questions
     // Check if it's a valid question (not just a header or scale option)
     const isTooShort = questionText.length < 5
-    
+
     // Only exclude if the entire text matches these patterns (not if it just contains them)
     const isExactHeader = (
       lowerText === 'section' ||
@@ -423,7 +427,7 @@ export function validateParsedQuestions(questions: ParsedQuestion[]): {
         lowerText === 'rating scale'
       ))
     )
-    
+
     // Only exclude if it's an exact Likert scale option (not if it contains the word)
     const isExactLikertOption = (
       lowerText === 'strongly agree' ||
@@ -433,14 +437,14 @@ export function validateParsedQuestions(questions: ParsedQuestion[]): {
       lowerText === 'undecided' ||
       lowerText === 'neutral'
     )
-    
+
     // Exclude if it's just a percentage or weight indicator
     const isJustPercentage = /^[\d\s%()]+$/.test(questionText.trim())
-    
+
     // Exclude if it's just a single letter or number
     const isJustSingleItem = /^[a-z0-9]\s*[\.\)]\s*$/i.test(questionText.trim())
-    
-    const isValidQuestion = questionText && 
+
+    const isValidQuestion = questionText &&
       !isTooShort &&
       !isExactHeader &&
       !isExactLikertOption &&
@@ -551,21 +555,15 @@ export async function parseExcelQuestions(file: File): Promise<ExcelQuestionPars
 
 // STEP 7: Debug function para mag-test ng Excel parsing
 export function debugParseExcel(excelData: ExcelParseResult): ExcelQuestionParseResult {
-  console.log('Debug: Parsing Excel data...')
-  console.log('Total sheets:', excelData.totalSheets)
-  console.log('Total rows:', excelData.totalRows)
+
 
   excelData.sheets.forEach(sheet => {
-    console.log(`Sheet "${sheet.sheetName}":`)
-    console.log('- Headers:', sheet.headers)
-    console.log('- Rows:', sheet.data.length)
+
   })
 
   const result = parseQuestionsFromExcel(excelData)
 
-  console.log('Debug: Parse result:')
-  console.log('- Questions:', result.questions.length)
-  console.log('- Sections:', result.sections.length)
+
 
   if (result.questions.length > 0) {
     console.log('Sample question:', result.questions[0])
@@ -583,7 +581,7 @@ export type ParsedStudent = {
   section: string
   yearLevel: string
   enrolledCourse: string
-  enrolledSubject: string
+  enrolledSubjects: string[] // Array of subjects - supports multiple subjects separated by line breaks in Excel
   email: string
   password: string
   status: string // Regular or Irregular
@@ -599,23 +597,23 @@ export type ExcelStudentParseResult = {
 // Function to split full name into firstName, lastName, and suffix
 function splitName(fullName: string): { firstName: string; lastName: string; suffix: string } {
   const nameParts = fullName.trim().split(/\s+/)
-  
+
   if (nameParts.length === 0) {
     return { firstName: '', lastName: '', suffix: '' }
   }
-  
+
   if (nameParts.length === 1) {
     return { firstName: nameParts[0], lastName: '', suffix: '' }
   }
-  
+
   // Check for common suffixes
   const suffixes = ['Jr', 'Sr', 'II', 'III', 'IV', 'Jr.', 'Sr.']
   const lastPart = nameParts[nameParts.length - 1]
-  const hasSuffix = suffixes.some(suffix => 
-    lastPart.toLowerCase() === suffix.toLowerCase() || 
+  const hasSuffix = suffixes.some(suffix =>
+    lastPart.toLowerCase() === suffix.toLowerCase() ||
     lastPart.toLowerCase() === suffix.toLowerCase() + '.'
   )
-  
+
   if (hasSuffix && nameParts.length >= 3) {
     const suffix = nameParts[nameParts.length - 1]
     const lastName = nameParts[nameParts.length - 2]
@@ -632,18 +630,18 @@ function splitName(fullName: string): { firstName: string; lastName: string; suf
 export function parseStudentsFromExcel(excelData: ExcelParseResult): ExcelStudentParseResult {
   const students: ParsedStudent[] = []
   const errors: string[] = []
-  
+
   // Process each sheet
   excelData.sheets.forEach((sheet) => {
     console.log(`Processing sheet: ${sheet.sheetName} for students`)
-    
+
     // Find column indices by header name (case-insensitive)
     const findColumnIndex = (headerName: string): number => {
-      return sheet.headers.findIndex(header => 
+      return sheet.headers.findIndex(header =>
         header?.toString().toLowerCase().trim() === headerName.toLowerCase().trim()
       )
     }
-    
+
     // Map Excel columns to our data structure
     const nameCol = findColumnIndex('NAME')
     const sectionCol = findColumnIndex('SECTION')
@@ -653,56 +651,64 @@ export function parseStudentsFromExcel(excelData: ExcelParseResult): ExcelStuden
     const emailCol = findColumnIndex('GMAIL')
     const passwordCol = findColumnIndex('PASSWORD')
     const statusCol = findColumnIndex('REGULAR OR IRREGULAR')
-    
+
     // Check if required columns are found
     if (nameCol === -1 || emailCol === -1) {
       errors.push(`Sheet "${sheet.sheetName}": Missing required columns (NAME or GMAIL)`)
       return
     }
-    
+
     // Process each row
     sheet.data.forEach((row, rowIndex) => {
       try {
         const name = row[sheet.headers[nameCol]]?.toString().trim() || ''
         const email = row[sheet.headers[emailCol]]?.toString().trim() || ''
-        
+
         // Skip empty rows
         if (!name && !email) {
           return
         }
-        
+
         // Validate required fields
         if (!name) {
           errors.push(`Row ${rowIndex + 2}: Missing name`)
           return
         }
-        
+
         if (!email) {
           errors.push(`Row ${rowIndex + 2}: Missing email`)
           return
         }
-        
+
         // Validate email format
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
         if (!emailRegex.test(email)) {
           errors.push(`Row ${rowIndex + 2}: Invalid email format: ${email}`)
           return
         }
-        
+
         // Split name into firstName, lastName, suffix
         const { firstName, lastName, suffix } = splitName(name)
-        
+
         // Extract other fields
         const section = sectionCol !== -1 ? (row[sheet.headers[sectionCol]]?.toString().trim() || '') : ''
         const yearLevel = yearCol !== -1 ? (row[sheet.headers[yearCol]]?.toString().trim() || '') : ''
         const enrolledCourse = courseCol !== -1 ? (row[sheet.headers[courseCol]]?.toString().trim() || '') : ''
-        const enrolledSubject = subjectCol !== -1 ? (row[sheet.headers[subjectCol]]?.toString().trim() || '') : ''
+
+        // Parse enrolled subjects - split by line breaks to handle multiple subjects in one cell
+        // Excel line breaks can be \n, \r\n, or \r depending on how the data was entered
+        const rawEnrolledSubject = subjectCol !== -1 ? (row[sheet.headers[subjectCol]]?.toString() || '') : ''
+        const enrolledSubjects: string[] = rawEnrolledSubject
+          .split(/\r?\n|\r/) // Split by any type of line break
+          .map(s => s.trim()) // Trim whitespace from each subject
+          .filter(s => s.length > 0) // Remove empty strings
+
         const password = passwordCol !== -1 ? (row[sheet.headers[passwordCol]]?.toString().trim() || '') : ''
         const status = statusCol !== -1 ? (row[sheet.headers[statusCol]]?.toString().trim() || 'Regular') : 'Regular'
-        
+
         // Generate studentId from email if not provided (use email prefix)
         const studentId = email.split('@')[0] || `STU-${rowIndex + 1}`
-        
+
         const student: ParsedStudent = {
           name,
           firstName,
@@ -711,25 +717,25 @@ export function parseStudentsFromExcel(excelData: ExcelParseResult): ExcelStuden
           section,
           yearLevel,
           enrolledCourse,
-          enrolledSubject,
+          enrolledSubjects, // Array of subjects parsed from line breaks
           email,
           password: password || 'Stud@1234', // Default password if not provided
           status: status || 'Regular',
           rowIndex: rowIndex + 2, // +2 because Excel rows are 1-indexed and we skip header
         }
-        
+
         students.push(student)
       } catch (error) {
         errors.push(`Row ${rowIndex + 2}: Error parsing row - ${(error as Error).message}`)
       }
     })
   })
-  
+
   console.log(`Parsed ${students.length} students from Excel`)
   if (errors.length > 0) {
     console.warn(`Found ${errors.length} errors during parsing:`, errors)
   }
-  
+
   return {
     students,
     totalStudents: students.length,
@@ -742,10 +748,10 @@ export async function parseExcelStudents(file: File): Promise<ExcelStudentParseR
   try {
     // Extract data from Excel
     const excelData = await readExcelFile(file)
-    
+
     // Parse students from Excel data
     const result = parseStudentsFromExcel(excelData)
-    
+
     return result
   } catch (error) {
     console.error('Excel parsing error:', error)
@@ -754,11 +760,18 @@ export async function parseExcelStudents(file: File): Promise<ExcelStudentParseR
 }
 
 // STEP 9: Types and functions for parsing professors from Excel
+// Type for subject-section pair
+export type SubjectSection = {
+  subject: string
+  sections: string[] // Array of sections for this subject
+}
+
 export type ParsedProfessor = {
   name: string
   department: string
-  subject: string
-  handledSection: string
+  subjects: string[] // Array of subjects (for backward compatibility)
+  subjectSections: SubjectSection[] // Paired subjects with their sections
+  handledSection: string // Raw handled section string (for legacy support)
   email: string
   password: string
   rowIndex?: number
@@ -776,18 +789,18 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
   const professors: ParsedProfessor[] = []
   const errors: string[] = []
   const professorsBySection: { [section: string]: ParsedProfessor[] } = {}
-  
+
   // Process each sheet
   excelData.sheets.forEach((sheet) => {
     console.log(`Processing sheet: ${sheet.sheetName} for professors`)
-    
+
     // Find column indices by header name (case-insensitive)
     const findColumnIndex = (headerName: string): number => {
-      return sheet.headers.findIndex(header => 
+      return sheet.headers.findIndex(header =>
         header?.toString().toLowerCase().trim() === headerName.toLowerCase().trim()
       )
     }
-    
+
     // Map Excel columns to our data structure
     const nameCol = findColumnIndex('NAME')
     const departmentCol = findColumnIndex('DEPARTMENT')
@@ -795,83 +808,135 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
     const sectionCol = findColumnIndex('HANDLED SECTION')
     const emailCol = findColumnIndex('GMAIL')
     const passwordCol = findColumnIndex('PASSWORD')
-    
+
     // Check if required columns are found
     if (nameCol === -1 || emailCol === -1 || departmentCol === -1) {
       errors.push(`Sheet "${sheet.sheetName}": Missing required columns (NAME, DEPARTMENT, or GMAIL)`)
       return
     }
-    
+
     // Process each row
     sheet.data.forEach((row, rowIndex) => {
       try {
         const name = row[sheet.headers[nameCol]]?.toString().trim() || ''
         const email = row[sheet.headers[emailCol]]?.toString().trim() || ''
         const department = row[sheet.headers[departmentCol]]?.toString().trim() || ''
-        
+
         // Skip empty rows
         if (!name && !email && !department) {
           return
         }
-        
+
         // Validate required fields
         if (!name) {
           errors.push(`Row ${rowIndex + 2}: Missing name`)
           return
         }
-        
+
         if (!email) {
           errors.push(`Row ${rowIndex + 2}: Missing email`)
           return
         }
-        
+
         if (!department) {
           errors.push(`Row ${rowIndex + 2}: Missing department`)
           return
         }
-        
+
         // Validate email format
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
         if (!emailRegex.test(email)) {
           errors.push(`Row ${rowIndex + 2}: Invalid email format: ${email}`)
           return
         }
-        
+
         // Extract other fields
-        const subject = subjectCol !== -1 ? (row[sheet.headers[subjectCol]]?.toString().trim() || '') : ''
-        const handledSection = sectionCol !== -1 ? (row[sheet.headers[sectionCol]]?.toString().trim() || '') : ''
+        // Parse subjects and sections - match them by line number
+        const rawSubject = subjectCol !== -1 ? (row[sheet.headers[subjectCol]]?.toString() || '') : ''
+        const rawSection = sectionCol !== -1 ? (row[sheet.headers[sectionCol]]?.toString() || '') : ''
+
+        // Parse numbered items with format: "1. Item1" or "2. Item2"
+        // Items are separated by line breaks
+        const parseNumberedItems = (text: string): Map<number, string> => {
+          const items = new Map<number, string>()
+          // Split by line breaks
+          const lines = text.split(/\r?\n|\r/).filter(s => s.trim().length > 0)
+
+          let autoIndex = 1
+          lines.forEach(line => {
+            const trimmed = line.trim()
+            // Check if line starts with a number like "1. " or "2. "
+            const match = trimmed.match(/^(\d+)\.\s*(.+)$/)
+            if (match) {
+              const num = parseInt(match[1])
+              const value = match[2].trim()
+              if (value) {
+                items.set(num, value)
+              }
+            } else if (trimmed) {
+              // No number prefix - assign auto-incrementing index
+              items.set(autoIndex, trimmed)
+              autoIndex++
+            }
+          })
+          return items
+        }
+
+        const subjectMap = parseNumberedItems(rawSubject)
+        const sectionMap = parseNumberedItems(rawSection)
+
+        // Create subject-section pairs
+        const subjectSections: SubjectSection[] = []
+        const subjects: string[] = []
+
+        // Get all unique keys from both maps
+        const allKeys = new Set([...subjectMap.keys(), ...sectionMap.keys()])
+        const sortedKeys = Array.from(allKeys).sort((a, b) => a - b)
+
+        sortedKeys.forEach(num => {
+          const subject = subjectMap.get(num)
+          if (subject) {
+            subjects.push(subject)
+            const sectionsStr = sectionMap.get(num) || ''
+            // Parse sections - treat commas as separators (like line breaks)
+            const sections = sectionsStr.split(/[,]/).map(s => s.trim()).filter(s => s.length > 0)
+            subjectSections.push({ subject, sections })
+          }
+        })
+
         const password = passwordCol !== -1 ? (row[sheet.headers[passwordCol]]?.toString().trim() || '') : ''
-        
+
         const professor: ParsedProfessor = {
           name,
           department,
-          subject,
-          handledSection,
+          subjects, // Array of subjects
+          subjectSections, // Paired subjects with sections
+          handledSection: rawSection.trim(), // Keep raw for legacy support
           email,
           password: password || 'Prof@1234', // Default password if not provided
           rowIndex: rowIndex + 2, // +2 because Excel rows are 1-indexed and we skip header
         }
-        
+
         professors.push(professor)
-        
-        // Group by section
-        if (handledSection) {
-          if (!professorsBySection[handledSection]) {
-            professorsBySection[handledSection] = []
+
+        // Group by section (use rawSection which contains the raw section data)
+        if (rawSection.trim()) {
+          if (!professorsBySection[rawSection.trim()]) {
+            professorsBySection[rawSection.trim()] = []
           }
-          professorsBySection[handledSection].push(professor)
+          professorsBySection[rawSection.trim()].push(professor)
         }
       } catch (error) {
         errors.push(`Row ${rowIndex + 2}: Error parsing row - ${(error as Error).message}`)
       }
     })
   })
-  
+
   console.log(`Parsed ${professors.length} professors from Excel`)
   if (errors.length > 0) {
     console.warn(`Found ${errors.length} errors during parsing:`, errors)
   }
-  
+
   return {
     professors,
     totalProfessors: professors.length,
@@ -885,10 +950,10 @@ export async function parseExcelProfessors(file: File): Promise<ExcelProfessorPa
   try {
     // Extract data from Excel
     const excelData = await readExcelFile(file)
-    
+
     // Parse professors from Excel data
     const result = parseProfessorsFromExcel(excelData)
-    
+
     return result
   } catch (error) {
     console.error('Excel parsing error:', error)

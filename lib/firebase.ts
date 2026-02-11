@@ -23,11 +23,13 @@ import { getFirestore, connectFirestoreEmulator, type Firestore } from "firebase
 
 // STEP 2: Firebase configuration object - lahat ng settings para sa Firebase project
 const firebaseConfig = {
-  apiKey: "AIzaSyA3EPpZG9Gq_DlJtQbyTHYHXFDwQSWLYUU", // API key para sa Firebase
-  authDomain: "evaluation-in-la-conception.firebaseapp.com", // Domain para sa authentication
-  projectId: "evaluation-in-la-conception", // Project ID ng Firebase project
-  messagingSenderId: "1066063306942", // Sender ID para sa messaging
-  appId: "1:1066063306942:web:0794a4ec3ac7fe2d0bbeef" // App ID ng web application
+  apiKey: "AIzaSyDSuXyfE_GNGSUVMV9ynUgLDveQt1yocLY",
+  authDomain: "laconception-database.firebaseapp.com",
+  projectId: "laconception-database",
+  storageBucket: "laconception-database.firebasestorage.app",
+  messagingSenderId: "256226515300",
+  appId: "1:256226515300:web:a0d6ed235504d9d5bb0271",
+  measurementId: "G-WNGVWCMZNG"
 };
 
 // STEP 3: Initialize ang Firebase app gamit ang configuration (singleton pattern)

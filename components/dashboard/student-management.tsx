@@ -45,12 +45,21 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, Users, UserPlus, Search, X, Upload, FileSpreadsheet, Eye } from "lucide-react"
-import { studentService } from "@/lib/database"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Plus, Edit, Trash2, Users, UserPlus, Search, X, Upload, FileSpreadsheet, Eye, Trash, PlusCircle, ChevronLeft, ChevronRight, ClipboardList, CheckCircle2, Clock } from "lucide-react"
+import { studentService, professorService } from "@/lib/database"
 import { useToast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
+import { sanitizeErrorMessage } from "@/lib/utils"
 import React from "react"
 import { parseExcelStudents, type ParsedStudent } from "@/lib/excel-parser"
+import { evaluationResultsService } from "@/lib/evaluation-results-service"
+import type { EvaluationResult } from "@/lib/types"
+
 
 interface Student {
   id: string
@@ -62,7 +71,8 @@ interface Student {
   yearLevel: string
   course: string
   section: string
-  subject?: string
+  subject?: string // Legacy single subject field
+  subjects?: string[] // Array of enrolled subjects (supports multiple subjects)
   status?: string
   accountStatus?: string
   role: string
@@ -70,9 +80,28 @@ interface Student {
   updatedAt: Date
 }
 
+// Professor interface for evaluation progress tracking
+interface Professor {
+  id: string
+  name: string
+  email: string
+  departmentName: string
+  status?: "active" | "inactive" | "resigned"
+  subjectSections?: Array<{ subject: string; sections: string[] }>
+}
+
+// Evaluation progress item for popup display
+interface EvaluationProgressItem {
+  subject: string
+  professorId: string
+  professorName: string
+  isComplete: boolean
+}
+
 interface StudentManagementProps {
   onRefresh?: () => void
 }
+
 
 export function StudentManagement({ onRefresh }: StudentManagementProps) {
   // STATES FOR STUDENT MANAGEMENT:
@@ -87,6 +116,8 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   const [selectedCourse, setSelectedCourse] = useState<string>("all")
   const [selectedYearLevel, setSelectedYearLevel] = useState<string>("all")
   const [selectedAccountStatus, setSelectedAccountStatus] = useState<string>("all")
+  const [currentPage, setCurrentPage] = useState(1)
+  const studentsPerPage = 10
 
   const filteredStudents = useMemo(() => {
     let filtered = students
@@ -123,7 +154,9 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
           (s.yearLevel ?? "").toLowerCase().includes(term) ||
           (s.course ?? "").toLowerCase().includes(term) ||
           (s.section ?? "").toLowerCase().includes(term) ||
-          (s.subject ?? "").toLowerCase().includes(term) ||
+          // Search in subjects array (join to string for search)
+          (s.subjects ?? []).join(' ').toLowerCase().includes(term) ||
+          (s.subject ?? "").toLowerCase().includes(term) || // Legacy single subject field
           (s.status ?? "").toLowerCase().includes(term) ||
           (s.accountStatus ?? "").toLowerCase().includes(term) ||
           (s.role ?? "").toLowerCase().includes(term)
@@ -133,6 +166,19 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
 
     return filtered
   }, [students, searchTerm, selectedSection, selectedCourse, selectedYearLevel, selectedAccountStatus])
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredStudents.length / studentsPerPage)
+  const paginatedStudents = useMemo(() => {
+    const startIndex = (currentPage - 1) * studentsPerPage
+    const endIndex = startIndex + studentsPerPage
+    return filteredStudents.slice(startIndex, endIndex)
+  }, [filteredStudents, currentPage, studentsPerPage])
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, selectedSection, selectedCourse, selectedYearLevel, selectedAccountStatus])
 
   // Get unique sections and year levels for filters
   const uniqueSections = useMemo(() => {
@@ -161,6 +207,16 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   const [previewErrors, setPreviewErrors] = useState<string[]>([])
   const [newStudents, setNewStudents] = useState<ParsedStudent[]>([]) // New students (non-duplicates)
   const [duplicateStudents, setDuplicateStudents] = useState<ParsedStudent[]>([]) // Duplicate students
+  const [editingSubjects, setEditingSubjects] = useState<string[]>(['']) // For dynamic subject editing
+
+  // States for evaluation progress tracking (real-time)
+  const [professors, setProfessors] = useState<Professor[]>([])
+  const [evaluationResults, setEvaluationResults] = useState<EvaluationResult[]>([])
+  const [isEvalProgressDialogOpen, setIsEvalProgressDialogOpen] = useState(false)
+  const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<Student | null>(null)
+  const evalResultsUnsubscribeRef = useRef<(() => void) | null>(null)
+  const professorsUnsubscribeRef = useRef<(() => void) | null>(null)
+
 
   // Toast for notifications
   const { toast } = useToast()
@@ -324,7 +380,90 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     }
   }, [])
 
+  // Real-time listeners for professors and evaluation results (for Eval Progress feature)
+  useEffect(() => {
+    // Set up professors listener
+    const profUnsubscribe = professorService.onProfessorsChange((profsData) => {
+      setProfessors(profsData as Professor[])
+    })
+    professorsUnsubscribeRef.current = profUnsubscribe
+
+    // Set up evaluation results listener
+    const evalUnsubscribe = evaluationResultsService.onEvaluationResultsChange((results) => {
+      setEvaluationResults(results)
+    })
+    evalResultsUnsubscribeRef.current = evalUnsubscribe
+
+    return () => {
+      if (professorsUnsubscribeRef.current) {
+        professorsUnsubscribeRef.current()
+        professorsUnsubscribeRef.current = null
+      }
+      if (evalResultsUnsubscribeRef.current) {
+        evalResultsUnsubscribeRef.current()
+        evalResultsUnsubscribeRef.current = null
+      }
+    }
+  }, [])
+
+  // Helper function to calculate evaluation progress for a student
+  const getEvaluationProgressForStudent = useMemo(() => {
+    return (student: Student): EvaluationProgressItem[] => {
+      const progressItems: EvaluationProgressItem[] = []
+
+      // Get student's enrolled subjects
+      const studentSubjects = student.subjects && student.subjects.length > 0
+        ? student.subjects
+        : student.subject
+          ? [student.subject]
+          : []
+
+      if (studentSubjects.length === 0) return progressItems
+
+      const studentSection = student.section
+
+      // Find professors who teach student's enrolled subjects AND handle student's section
+      professors.forEach((prof) => {
+        if (prof.status === 'resigned' || prof.status === 'inactive') return
+
+        const profSubjectSections = prof.subjectSections || []
+
+        profSubjectSections.forEach((ss) => {
+          // Check if professor teaches a subject the student is enrolled in
+          const subjectMatch = studentSubjects.some(
+            (s) => s.toLowerCase().trim() === ss.subject.toLowerCase().trim()
+          )
+
+          // Check if professor handles the student's section for this subject
+          const sectionMatch = ss.sections.some(
+            (sec) => sec.toLowerCase().trim() === studentSection?.toLowerCase().trim()
+          )
+
+          if (subjectMatch && sectionMatch) {
+            // Check if this student has already evaluated this professor
+            const hasEvaluated = evaluationResults.some((er) => {
+              const emailMatch = er.studentEmail?.toLowerCase() === student.email?.toLowerCase()
+              const profMatch = er.professorId === prof.id
+              const isComplete = er.isComplete || er.evaluationStatus === 'submitted'
+              return emailMatch && profMatch && isComplete
+            })
+
+            progressItems.push({
+              subject: ss.subject,
+              professorId: prof.id,
+              professorName: prof.name,
+              isComplete: hasEvaluated
+            })
+          }
+        })
+      })
+
+      return progressItems
+    }
+  }, [professors, evaluationResults])
+
   // FUNCTION PARA SA PAG-IMPORT NG STUDENTS MULA SA EXCEL
+
   const handleExcelFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -434,7 +573,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
       console.error("Error reading Excel:", error)
       toast({
         title: "Read Failed",
-        description: `Failed to read Excel file: ${(error as any)?.message || "Unknown error occurred"}`,
+        description: `Failed to read Excel file. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     } finally {
@@ -466,7 +605,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
         yearLevel: string
         course: string
         section: string
-        subject?: string
+        subjects?: string[] // Array of enrolled subjects
         status?: string
       }> = []
 
@@ -482,7 +621,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
           yearLevel: student.yearLevel,
           course: student.enrolledCourse,
           section: student.section,
-          subject: student.enrolledSubject,
+          subjects: student.enrolledSubjects, // Use subjects array (supports multiple subjects)
           status: student.status,
           accountStatus: "active", // Default new students to active
         }))
@@ -510,7 +649,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
           yearLevel: student.yearLevel,
           course: student.enrolledCourse,
           section: student.section,
-          subject: student.enrolledSubject,
+          subjects: student.enrolledSubjects, // Use subjects array (supports multiple subjects)
           status: student.status,
         }))
       } else {
@@ -551,7 +690,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
           yearLevel: student.yearLevel,
           course: student.enrolledCourse,
           section: student.section,
-          subject: student.enrolledSubject,
+          subjects: student.enrolledSubjects, // Use subjects array (supports multiple subjects)
           status: student.status,
           accountStatus: "active", // Default new students to active
         }))
@@ -612,7 +751,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
       console.error("Error importing students:", error)
       toast({
         title: "Import Failed",
-        description: `Failed to import students: ${(error as any)?.message || "Unknown error occurred"}`,
+        description: `Failed to import students. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     } finally {
@@ -644,6 +783,9 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
 
     try {
       // I-update muna ang datos sa Firebase database
+      // Use editingSubjects array directly
+      const validSubjects = editingSubjects.filter(s => s.trim() !== '')
+
       await studentService.update(
         editingStudent.id,
         formData.firstName,
@@ -655,7 +797,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
         formData.course,
         formData.section,
         formData.password || undefined,
-        formData.subject || undefined,
+        validSubjects.length > 0 ? validSubjects.join(', ') : undefined, // Pass as comma-separated string for database
         formData.status || undefined,
         formData.accountStatus || undefined
       )
@@ -663,6 +805,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
       // Clear form and close dialog
       setIsEditDialogOpen(false)
       setEditingStudent(null)
+      setEditingSubjects(['']) // Reset editing subjects
       setFormData({ firstName: "", lastName: "", suffix: "", studentId: "", email: "", password: "", yearLevel: "", course: "", section: "", subject: "", status: "", accountStatus: "" })
 
       // Show success message
@@ -679,18 +822,18 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
 
       if ((error as any)?.message?.includes("Student ID already exists")) {
         errorTitle = "Duplicate Student ID"
-        errorDescription = (error as any).message
+        errorDescription = "A student with this ID already exists."
       } else if ((error as any)?.message?.includes("Email already exists")) {
         errorTitle = "Duplicate Email"
-        errorDescription = (error as any).message
+        errorDescription = "A student with this email already exists."
       } else if ((error as any)?.code === "permission-denied") {
         errorTitle = "Permission Denied"
         errorDescription = "Please check your authentication status."
       } else if ((error as any)?.code === "unavailable") {
         errorTitle = "Database Unavailable"
         errorDescription = "Please check your internet connection."
-      } else if ((error as any)?.message) {
-        errorDescription = (error as any).message
+      } else {
+        errorDescription = sanitizeErrorMessage(error)
       }
 
       toast({
@@ -726,7 +869,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
       console.error("Error deleting student:", error)
       toast({
         title: "Delete Failed",
-        description: `Failed to delete student. Error: ${(error as any)?.message || "Unknown error occurred"}`,
+        description: `Failed to delete student. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     }
@@ -737,17 +880,30 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     // I-save ang kasalukuyang datos ng student na ie-edit
     setEditingStudent(student)
 
-    // I-lagay ang current values sa form
+    // Initialize editingSubjects array from student data
+    let subjectsArray: string[] = []
+    if (student.subjects && student.subjects.length > 0) {
+      subjectsArray = [...student.subjects]
+    } else if (student.subject) {
+      // Parse legacy comma-separated subject field
+      subjectsArray = student.subject.split(',').map(s => s.trim()).filter(s => s)
+    }
+    // Ensure at least one empty field if no subjects
+    if (subjectsArray.length === 0) {
+      subjectsArray = ['']
+    }
+    setEditingSubjects(subjectsArray)
+
     setFormData({
       firstName: student.firstName,
       lastName: student.lastName,
       suffix: student.suffix,
-      studentId: student.studentId,
+      studentId: "", // Start with empty Student ID for manual entry
       email: student.email,
       yearLevel: student.yearLevel,
       course: student.course,
       section: student.section,
-      subject: student.subject || "",
+      subject: '', // No longer used directly, use editingSubjects instead
       status: student.status || "Regular",
       accountStatus: student.accountStatus || "active",
       password: "", // Don't show current password for security
@@ -823,50 +979,6 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
           <p className="text-xs sm:text-sm md:text-base text-muted-foreground">Manage student accounts and access to evaluations</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={students.length === 0} className="w-full sm:w-auto text-sm">
-                <Trash2 className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                Delete All
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete All Students</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete ALL {students.length} student accounts?
-                  <br /><br />
-                  <strong className="text-destructive">Warning:</strong> This action cannot be undone and will permanently delete all student accounts from the database.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={async () => {
-                    try {
-                      // Delete all students
-                      await Promise.all(students.map((student) => studentService.delete(student.id)))
-                      toast({
-                        title: "All Students Deleted",
-                        description: `Successfully deleted ${students.length} student accounts.`,
-                      })
-                      onRefresh?.()
-                    } catch (error) {
-                      console.error("Error deleting all students:", error)
-                      toast({
-                        title: "Delete Failed",
-                        description: `Failed to delete all students. Error: ${(error as any)?.message || "Unknown error occurred"}`,
-                        variant: "destructive",
-                      })
-                    }
-                  }}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  Delete All
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => {
@@ -1106,8 +1218,18 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <div className="text-sm" title={student.enrolledSubject}>
-                                  {student.enrolledSubject}
+                                <div className="text-sm" title={student.enrolledSubjects.join(', ')}>
+                                  {student.enrolledSubjects.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {student.enrolledSubjects.map((subject, idx) => (
+                                        <Badge key={idx} variant="outline" className="text-xs">
+                                          {subject}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -1117,8 +1239,12 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                               </TableCell>
                               <TableCell>
                                 <Badge
-                                  variant={student.status === 'Regular' ? 'default' : 'destructive'}
-                                  className={student.status === 'Irregular' ? 'bg-red-500 text-white hover:bg-red-600' : ''}
+                                  variant={student.status === 'Regular' ? 'default' : student.status === 'Graduated' ? 'outline' : 'destructive'}
+                                  className={
+                                    student.status === 'Irregular' ? 'bg-red-500 text-white hover:bg-red-600' :
+                                      student.status === 'Graduated' ? 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500 border-yellow-500' :
+                                        student.status === 'Drop' ? 'bg-gray-500 text-white hover:bg-gray-600' : ''
+                                  }
                                 >
                                   {student.status}
                                 </Badge>
@@ -1356,16 +1482,58 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                   <TableHead className="w-[180px]">Email</TableHead>
                   <TableHead className="w-[80px]">Status</TableHead>
                   <TableHead className="w-[90px]">Account</TableHead>
-                  <TableHead className="text-right w-[100px]">Actions</TableHead>
+                  <TableHead className="w-[110px]">Eval Progress</TableHead>
+                  <TableHead className="text-right w-[80px]">Actions</TableHead>
+
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredStudents.map((student) => (
+                {paginatedStudents.map((student) => (
                   <TableRow key={student.id}>
                     <TableCell className="font-medium">
-                      <div className="truncate text-sm" title={`${student.firstName} ${student.lastName} ${student.suffix}`}>
-                        {student.firstName} {student.lastName} {student.suffix}
-                      </div>
+                      {/* Clickable name that shows all enrolled subjects */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            className="truncate text-sm text-primary hover:underline cursor-pointer text-left max-w-[140px] block"
+                            title={`Click to view subjects for ${student.firstName} ${student.lastName}`}
+                          >
+                            {student.firstName} {student.lastName} {student.suffix}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 p-4" align="start">
+                          <div className="space-y-3">
+                            <div>
+                              <h4 className="font-semibold text-base">{student.firstName} {student.lastName} {student.suffix}</h4>
+                              <p className="text-xs text-muted-foreground">{student.email}</p>
+                            </div>
+                            <div className="border-t pt-3">
+                              <h5 className="text-sm font-medium mb-2">Enrolled Subjects</h5>
+                              {(() => {
+                                const subjectsArray = student.subjects && student.subjects.length > 0
+                                  ? student.subjects
+                                  : student.subject
+                                    ? [student.subject]
+                                    : []
+
+                                if (subjectsArray.length === 0) {
+                                  return <span className="text-sm text-muted-foreground">No subjects enrolled</span>
+                                }
+
+                                return (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {subjectsArray.map((subj, idx) => (
+                                      <Badge key={idx} variant="outline" className="text-xs">
+                                        {subj}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">{student.section}</Badge>
@@ -1379,9 +1547,52 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="truncate text-sm" title={student.subject || '-'}>
-                        {student.subject || '-'}
-                      </div>
+                      {/* Clickable subject display with popover */}
+                      {(() => {
+                        const subjectsArray = student.subjects && student.subjects.length > 0
+                          ? student.subjects
+                          : student.subject
+                            ? [student.subject]
+                            : []
+
+                        if (subjectsArray.length === 0) {
+                          return <span className="text-muted-foreground text-sm">-</span>
+                        }
+
+                        if (subjectsArray.length === 1) {
+                          return (
+                            <Badge variant="outline" className="text-xs max-w-[160px] truncate" title={subjectsArray[0]}>
+                              {subjectsArray[0]}
+                            </Badge>
+                          )
+                        }
+
+                        // Multiple subjects - clickable badge with popover
+                        return (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-transparent bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer"
+                              >
+                                {subjectsArray.length} subjects
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64 p-3" align="start">
+                              <div className="space-y-2">
+                                <h4 className="font-medium text-sm">All Enrolled Subjects ({subjectsArray.length})</h4>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {subjectsArray.map((subj, idx) => (
+                                    <Badge key={idx} variant="outline" className="text-xs">
+                                      {subj}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )
+                      })()}
                     </TableCell>
                     <TableCell>
                       <div className="truncate text-sm" title={student.email}>
@@ -1390,8 +1601,12 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={student.status === 'Regular' ? 'default' : 'destructive'}
-                        className={student.status === 'Irregular' ? 'bg-red-500 text-white hover:bg-red-600' : ''}
+                        variant={student.status === 'Regular' ? 'default' : student.status === 'Graduated' ? 'outline' : 'destructive'}
+                        className={
+                          student.status === 'Irregular' ? 'bg-red-500 text-white hover:bg-red-600' :
+                            student.status === 'Graduated' ? 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500 border-yellow-500' :
+                              student.status === 'Drop' ? 'bg-gray-500 text-white hover:bg-gray-600' : ''
+                        }
                       >
                         {student.status || 'Regular'}
                       </Badge>
@@ -1404,46 +1619,49 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                         {student.accountStatus === 'active' ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const progress = getEvaluationProgressForStudent(student)
+                        const pendingCount = progress.filter(p => !p.isComplete).length
+                        const totalCount = progress.length
+
+                        if (totalCount === 0) {
+                          return <span className="text-muted-foreground text-xs">N/A</span>
+                        }
+
+                        return (
+                          <button
+                            onClick={() => {
+                              setSelectedStudentForProgress(student)
+                              setIsEvalProgressDialogOpen(true)
+                            }}
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium cursor-pointer transition-colors ${pendingCount === 0
+                              ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-100'
+                              : 'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900 dark:text-amber-100'
+                              }`}
+                            title={`Click to view evaluation progress`}
+                          >
+                            {pendingCount === 0 ? (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" />
+                                Complete
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="h-3 w-3" />
+                                {pendingCount} pending
+                              </>
+                            )}
+                          </button>
+                        )
+                      })()}
+                    </TableCell>
                     <TableCell className="text-right">
+
                       <div className="flex justify-end gap-1">
                         <Button variant="outline" size="sm" onClick={() => openEditDialog(student)} className="h-8 w-8 p-0">
                           <Edit className="h-3.5 w-3.5" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive h-8 w-8 p-0">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Student Account</AlertDialogTitle>
-                              <AlertDialogDescription className="space-y-3">
-                                <p className="font-semibold text-destructive">
-                                  ⚠️ This will permanently delete the student account for {student.firstName} {student.lastName}:
-                                </p>
-                                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                                  <li>Student profile and authentication data</li>
-                                  <li>All evaluation submissions by this student</li>
-                                  <li>Student ID: {student.studentId}</li>
-                                  <li>Email: {student.email}</li>
-                                </ul>
-                                <p className="font-semibold text-destructive">
-                                  This action cannot be undone.
-                                </p>
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteStudent(student.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Delete Student
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1460,6 +1678,62 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
               <p className="text-muted-foreground">No students found. Try adjusting your search.</p>
             </div>
           ) : null}
+
+          {/* Pagination Controls */}
+          {filteredStudents.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {((currentPage - 1) * studentsPerPage) + 1} to {Math.min(currentPage * studentsPerPage, filteredStudents.length)} of {filteredStudents.length} students
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="h-8 px-3"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let pageNum: number
+                    if (totalPages <= 5) {
+                      pageNum = i + 1
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i
+                    } else {
+                      pageNum = currentPage - 2 + i
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNum}
+                      </Button>
+                    )
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  className="h-8 px-3"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -1493,19 +1767,18 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                 id="edit-suffix"
                 value={formData.suffix}
                 onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
-
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-studentId">Student ID</Label>
               <Input
                 id="edit-studentId"
-
+                value={formData.studentId}
                 onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-email">Email Address</Label>
+              <Label htmlFor="edit-email">Email</Label>
               <Input
                 id="edit-email"
                 type="email"
@@ -1533,7 +1806,6 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                 id="edit-course"
                 value={formData.course}
                 onChange={(e) => setFormData({ ...formData, course: e.target.value })}
-
               />
             </div>
             <div className="grid gap-2">
@@ -1542,15 +1814,6 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                 id="edit-section"
                 value={formData.section}
                 onChange={(e) => setFormData({ ...formData, section: e.target.value })}
-
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-subject">Enrolled Subject</Label>
-              <Input
-                id="edit-subject"
-                value={formData.subject}
-                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
               />
             </div>
             <div className="grid gap-2">
@@ -1587,6 +1850,57 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                 placeholder="Enter new password"
               />
             </div>
+            {/* Enrolled Subjects - Multi-subject design */}
+            <div className="grid gap-3 pt-4 border-t mt-2">
+              <Label className="text-base font-semibold">Enrolled Subjects</Label>
+
+              <div className="space-y-4">
+                {editingSubjects.map((subject, idx) => (
+                  <div key={idx} className="space-y-2 pb-3 border-b last:border-b-0">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium text-gray-700">Subject {idx + 1}</Label>
+                      {editingSubjects.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            setEditingSubjects(prev => prev.filter((_, i) => i !== idx))
+                          }}
+                        >
+                          <Trash className="h-4 w-4 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label className="text-sm text-gray-600">Subject Name</Label>
+                      <Input
+                        value={subject}
+                        onChange={(e) => {
+                          setEditingSubjects(prev => prev.map((s, i) =>
+                            i === idx ? e.target.value : s
+                          ))
+                        }}
+                        placeholder="e.g., Database Management"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                variant="outline"
+                className="w-full mt-2"
+                onClick={() => {
+                  setEditingSubjects(prev => [...prev, ''])
+                }}
+              >
+                <PlusCircle className="h-4 w-4 mr-2" />
+                Add Another Subject
+              </Button>
+            </div>
           </div>
           <DialogFooter className="mt-4 flex-shrink-0">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
@@ -1597,7 +1911,102 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Evaluation Progress Dialog */}
+      <Dialog open={isEvalProgressDialogOpen} onOpenChange={setIsEvalProgressDialogOpen}>
+        <DialogContent style={{ width: 'calc(100vw - 40px)', maxWidth: 'calc(40vw - 40px)' }} className="max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Evaluation Progress
+            </DialogTitle>
+            <DialogDescription>
+              {selectedStudentForProgress && (
+                <>
+                  <span className="font-medium text-foreground">
+                    {selectedStudentForProgress.firstName} {selectedStudentForProgress.lastName}
+                  </span>
+                  {' - '}Section {selectedStudentForProgress.section}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {selectedStudentForProgress && (() => {
+              const progress = getEvaluationProgressForStudent(selectedStudentForProgress)
+              const pendingCount = progress.filter(p => !p.isComplete).length
+              const completedCount = progress.filter(p => p.isComplete).length
+
+              if (progress.length === 0) {
+                return (
+                  <div className="text-center py-6 text-muted-foreground">
+                    <ClipboardList className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No professors assigned for this student's subjects and section.</p>
+                  </div>
+                )
+              }
+
+              return (
+                <div className="space-y-4">
+                  {/* Summary badges */}
+                  <div className="flex gap-3">
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 px-3 py-1">
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                      {completedCount} Completed
+                    </Badge>
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 px-3 py-1">
+                      <Clock className="h-3.5 w-3.5 mr-1.5" />
+                      {pendingCount} Pending
+                    </Badge>
+                  </div>
+
+                  {/* Progress table with better spacing */}
+                  <div className="border rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="w-[50%] py-3 px-4">Subject</TableHead>
+                          <TableHead className="w-[30%] py-3 px-4">Professor</TableHead>
+                          <TableHead className="w-[20%] text-center py-3 px-4">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {progress.map((item, idx) => (
+                          <TableRow key={`${item.professorId}-${item.subject}-${idx}`}>
+                            <TableCell className="font-medium text-sm py-3 px-4">{item.subject}</TableCell>
+                            <TableCell className="text-sm py-3 px-4">{item.professorName}</TableCell>
+                            <TableCell className="text-center py-3 px-4">
+                              {item.isComplete ? (
+                                <Badge className="bg-green-600 text-white px-2.5 py-0.5">
+                                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                                  Complete
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 px-2.5 py-0.5">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Pending
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEvalProgressDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Toast Notifications */}
+
       <Toaster />
     </div>
   )

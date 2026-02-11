@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { BarChart3, ArrowLeft, Search, Users, X } from "lucide-react"
+import { BarChart3, ArrowLeft, Search, Users, X, FileDown } from "lucide-react"
+import jsPDF from "jspdf"
 import { firebaseEvaluationService, type FirebaseEvaluationResult } from "@/lib/firebase-evaluation-service"
 import type { EvaluationQuestion, Professor } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
@@ -36,6 +37,7 @@ type QuestionAggregate = {
   options: string[] // Mga choices para sa tanong
   counts: Record<string, number> // Bilang ng bawat sagot
   textResponses?: string[] // Mga text na sagot (kung text type)
+  section?: string // Section/category ng question
 }
 
 // Define ang mga colors para sa charts
@@ -48,6 +50,40 @@ const chartColors = [
   "#06b6d4", // cyan
   "#84cc16", // lime
 ]
+
+// Section order for grouping questions
+// Note: Even indexes (0, 2, 4, 6, 8, 10) are used as tabs, odd indexes are alternate names for matching
+const SECTION_ORDER = [
+  "A. Instructional Competence",
+  "Instructional Competence",
+  "B. Classroom Management",
+  "Classroom Management",
+  "C. Professionalism and Personal Qualities",
+  "Professionalism and Personal Qualities",
+  "D. Student Support and Development",
+  "Student Support and Development",
+  "E. Research",
+  "Research",
+  "F. Comments",
+  "Comments",
+]
+
+// Section colors for visual distinction
+const SECTION_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  "A. Instructional Competence": { bg: "bg-blue-50", border: "border-blue-500", text: "text-blue-700" },
+  "Instructional Competence": { bg: "bg-blue-50", border: "border-blue-500", text: "text-blue-700" },
+  "B. Classroom Management": { bg: "bg-green-50", border: "border-green-500", text: "text-green-700" },
+  "Classroom Management": { bg: "bg-green-50", border: "border-green-500", text: "text-green-700" },
+  "C. Professionalism and Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
+  "Professionalism and Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
+  "D. Student Support and Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
+  "Student Support and Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
+  "E. Research": { bg: "bg-pink-50", border: "border-pink-500", text: "text-pink-700" },
+  "Research": { bg: "bg-pink-50", border: "border-pink-500", text: "text-pink-700" },
+  "F. Comments": { bg: "bg-teal-50", border: "border-teal-500", text: "text-teal-700" },
+  "Comments": { bg: "bg-teal-50", border: "border-teal-500", text: "text-teal-700" },
+
+}
 
 interface EvaluationResultsManagementProps {
   questions: EvaluationQuestion[]
@@ -66,6 +102,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
   const [unsubscribe, setUnsubscribe] = useState<(() => void) | null>(null) // Function para i-stop ang real-time updates
   const [googleChartsLoaded, setGoogleChartsLoaded] = useState(false) // Kung na-load na ba ang Google Charts
   const [questionAggregates, setQuestionAggregates] = useState<Record<string, QuestionAggregate>>({}) // Data ng mga question aggregates
+  const [selectedSectionFilter, setSelectedSectionFilter] = useState<string>("A. Instructional Competence") // Filter for sections - default to first section
 
   // Load Google Charts library para sa paggawa ng charts
   useEffect(() => {
@@ -100,13 +137,11 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
     // Make sure we're getting the PIE chart container, not the bar chart container
     const el = document.getElementById(`pie-chart-${questionId}`) // Kunin ang element
     if (!el) {
-      console.warn(`Pie chart container not found: pie-chart-${questionId}`)
       return // Hindi mag-draw kung walang element
     }
 
     // Verify this is the correct container by checking the ID
     if (!el.id.includes('pie-chart')) {
-      console.error(`Wrong container for pie chart: ${el.id}`)
       return
     }
 
@@ -157,13 +192,11 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
     // Make sure we're getting the BAR chart container, not the pie chart container
     const el = document.getElementById(`bar-chart-${questionId}`) // Kunin ang element
     if (!el) {
-      console.warn(`Bar chart container not found: bar-chart-${questionId}`)
       return // Hindi mag-draw kung walang element
     }
 
     // Verify this is the correct container by checking the ID
     if (!el.id.includes('bar-chart')) {
-      console.error(`Wrong container for bar chart: ${el.id}`)
       return
     }
 
@@ -230,7 +263,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
       const chart = new window.google.visualization.ColumnChart(el) // Gumawa ng bar chart
       chart.draw(data, options) // I-draw ang chart
     } catch (error) {
-      console.error(`Error drawing bar chart for question ${questionId}:`, error)
+      // Error silently handled - chart failed to render
     }
   }
 
@@ -320,7 +353,6 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
       }
 
       const unsubscribeFn = firebaseEvaluationService.subscribeToEvaluationsByEmail(professor.email, (evaluations) => {
-        console.log("Received Firebase evaluations:", evaluations)
         setFirebaseEvaluations(evaluations)
       })
       setUnsubscribe(() => unsubscribeFn)
@@ -329,7 +361,6 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
       setSelectedQuestionForResults(question)
       setIsQuestionResultsDialogOpen(true)
     } catch (error) {
-      console.error("Error fetching question results:", error)
       toast({
         title: "Error loading results",
         description: "Could not load evaluation results for this question.",
@@ -371,9 +402,23 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
           // Process ALL responses for ALL questions from this professor
           if (allProfessorQuestions.some(q => q.id === response.questionId)) {
             const qid = response.questionId
+            // Find the question object to get section info (fallback to response.section if question is missing)
+            const questionObj = allProfessorQuestions.find(q => q.id === qid)
+            const responseSection = response.section
+            const resolvedSection = (() => {
+              const raw = (questionObj?.section || responseSection || "Other") as string
+              // Normalize old "Verbal interpretation" section names to "Comments"
+              const lower = raw.toLowerCase()
+              if (lower.includes("verbal") && lower.includes("interpretation")) {
+                return raw.replace(/^[A-F]\.\s*/, "").toLowerCase().includes("verbal") ?
+                  (raw.match(/^[A-F]\./) ? "F. Comments" : "Comments") : raw
+              }
+              return raw
+            })()
+            const resolvedQuestionType = String(response.questionType || questionObj?.questionType || "").toLowerCase()
             if (!aggregates[qid]) {
               let baseOptions = Array.isArray(response.options) ? response.options : []
-              if ((!baseOptions || baseOptions.length === 0) && response.questionType === "Likert Scale") {
+              if ((!baseOptions || baseOptions.length === 0) && resolvedQuestionType === "likert scale") {
                 baseOptions = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
               }
               const initialCounts: Record<string, number> = {}
@@ -383,17 +428,18 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
               aggregates[qid] = {
                 questionId: qid,
                 questionText: response.questionText,
-                questionType: response.questionType,
+                questionType: resolvedQuestionType,
                 options: baseOptions,
                 counts: initialCounts,
                 textResponses: [],
+                section: resolvedSection,
               }
             }
-            if (response.questionType === "text") {
+            if (resolvedQuestionType === "text") {
               if (response.answer && String(response.answer).trim()) {
                 aggregates[qid].textResponses!.push(String(response.answer))
               }
-            } else if (response.questionType === "Likert Scale") {
+            } else if (resolvedQuestionType === "likert scale") {
               const answerKey = String(response.answer)
               aggregates[qid].counts[answerKey] = (aggregates[qid].counts[answerKey] || 0) + 1
             } else {
@@ -407,8 +453,8 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
     setQuestionAggregates(aggregates)
 
     if (googleChartsLoaded && isQuestionResultsDialogOpen) {
-      // Use longer timeout to ensure DOM is fully rendered
-      setTimeout(() => {
+      // Use shorter timeout for faster initial render, then redraw after DOM settles
+      const drawCharts = () => {
         Object.values(aggregates).forEach((ag) => {
           const order = ag.options && ag.options.length > 0 ? ag.options : Object.keys(ag.counts)
           // Draw pie chart (donut) in the LEFT container
@@ -416,9 +462,19 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
           // Draw bar chart in the RIGHT container  
           drawBarChartForQuestion(ag.questionId, ag.counts, order)
         })
-      }, 400)
+      }
+
+      // Initial draw with short timeout
+      const id1 = setTimeout(drawCharts, 100)
+      // Secondary draw to catch any charts that didn't render on first pass
+      const id2 = setTimeout(drawCharts, 300)
+
+      return () => {
+        clearTimeout(id1)
+        clearTimeout(id2)
+      }
     }
-  }, [firebaseEvaluations, isQuestionResultsDialogOpen, selectedQuestionForResults, googleChartsLoaded, questions, professors])
+  }, [firebaseEvaluations, isQuestionResultsDialogOpen, selectedQuestionForResults, googleChartsLoaded, questions, professors, selectedSectionFilter])
 
   // Redraw charts when data changes
   useEffect(() => {
@@ -437,7 +493,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
       })
     }
 
-    const id = window.setTimeout(draw, 400)
+    const id = window.setTimeout(draw, 50)
 
     // Add resize listener to redraw charts when window is resized
     const handleResize = () => {
@@ -451,7 +507,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
       if (resizeTimeout) clearTimeout(resizeTimeout)
       window.removeEventListener('resize', handleResize)
     }
-  }, [questionAggregates, googleChartsLoaded, isQuestionResultsDialogOpen])
+  }, [questionAggregates, googleChartsLoaded, isQuestionResultsDialogOpen, selectedSectionFilter])
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -794,112 +850,526 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
             {/* Custom Header */}
             <div className="bg-gray-800 text-white p-3 sm:p-4 md:p-6 flex-shrink-0">
               <div className="flex items-center justify-between gap-2 sm:gap-4">
-                <div className="flex-1 min-w-0">
-                  <h1 className="text-base sm:text-lg md:text-xl font-bold text-white flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
-                    <span className="truncate">Student Evaluation Results</span>
-                  </h1>
-                  <p className="text-gray-300 text-[10px] sm:text-xs md:text-sm mt-0.5 sm:mt-1 hidden sm:block">
-                    Complete analysis of all student responses
-                  </p>
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                  <div className="flex-1 min-w-0">
+                    <h1 className="text-base sm:text-lg md:text-xl font-bold text-white flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
+                      <span className="truncate">Professor Evaluation Results</span>
+                    </h1>
+                    <p className="text-gray-300 text-[10px] sm:text-xs md:text-sm mt-0.5 sm:mt-1 hidden sm:block">
+                      Complete analysis of all student responses
+                    </p>
+                  </div>
                 </div>
+                {/* Overall Performance in header */}
+                {Object.values(questionAggregates).length > 0 && (() => {
+                  const aggs = Object.values(questionAggregates)
+                  let gp = 0, gt = 0
+                  aggs.forEach(q => {
+                    if (q.questionType !== "text" && !(q.section || "").toLowerCase().includes("comment")) {
+                      const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
+                      const opts = q.options || Object.keys(q.counts)
+                      gp += (q.counts[opts[0]] || 0) + (q.counts[opts[1]] || 0)
+                      gt += total
+                    }
+                  })
+                  const pct = gt > 0 ? Math.round((gp / gt) * 100) : 0
+                  const label = pct >= 90 ? "Excellent" : pct >= 80 ? "Very Good" : pct >= 70 ? "Good" : pct >= 60 ? "Satisfactory" : "Needs Improvement"
+                  const color = pct >= 90 ? "text-green-400" : pct >= 80 ? "text-blue-400" : pct >= 70 ? "text-yellow-400" : pct >= 60 ? "text-orange-400" : "text-red-400"
+                  return (
+                    <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5 border border-white/20 flex-shrink-0">
+                      <div className={`text-xl sm:text-2xl font-bold ${color}`}>{pct}%</div>
+                      <div className="hidden sm:block">
+                        <div className={`text-[10px] font-medium ${color}`}>{label}</div>
+                        <div className="text-[9px] text-gray-400">Overall</div>
+                      </div>
+                    </div>
+                  )
+                })()}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Export PDF
+                    const aggs = Object.values(questionAggregates)
+                    if (aggs.length === 0) return
+
+                    const professor = selectedQuestionForResults ? professors.find(p => p.id === selectedQuestionForResults.teacherId) : null
+                    const profName = professor?.name || "Professor"
+
+                    const doc = new jsPDF({ orientation: "portrait" })
+                    const pageWidth = doc.internal.pageSize.getWidth()
+                    const pageHeight = doc.internal.pageSize.getHeight()
+
+                    // Helper: truncate text
+                    const truncateText = (text: string, maxWidth: number): string => {
+                      if (doc.getTextWidth(text) <= maxWidth) return text
+                      let t = text
+                      while (t.length > 0 && doc.getTextWidth(t + "...") > maxWidth) {
+                        t = t.slice(0, -1)
+                      }
+                      return t + "..."
+                    }
+
+                    // Title
+                    doc.setFontSize(16)
+                    doc.setFont("helvetica", "bold")
+                    doc.text("Professor Evaluation Results", 14, 18)
+                    doc.setFontSize(11)
+                    doc.setFont("helvetica", "normal")
+                    doc.text(profName, 14, 26)
+
+                    // Group aggregates by section
+                    const grouped: Record<string, QuestionAggregate[]> = {}
+                    aggs.forEach(q => {
+                      const section = q.section || "Other"
+                      if (!grouped[section]) grouped[section] = []
+                      grouped[section].push(q)
+                    })
+
+                    // Sort sections
+                    const sortedSecs = Object.keys(grouped).sort((a, b) => {
+                      const ai = SECTION_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase())
+                      const bi = SECTION_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase())
+                      if (ai === -1 && bi === -1) return 0
+                      if (ai === -1) return 1
+                      if (bi === -1) return -1
+                      return ai - bi
+                    })
+
+                    // --- Overall Performance Summary Table ---
+                    let y = 36
+                    doc.setFontSize(12)
+                    doc.setFont("helvetica", "bold")
+                    doc.text("Overall Performance Summary", 14, y)
+                    y += 8
+
+                    // Table header
+                    doc.setFillColor(55, 65, 81)
+                    doc.rect(14, y - 5, pageWidth - 28, 8, "F")
+                    doc.setFontSize(9)
+                    doc.setTextColor(255, 255, 255)
+                    doc.text("Section", 16, y)
+                    doc.text("Score", pageWidth - 28, y)
+                    y += 6
+
+                    doc.setTextColor(30, 30, 30)
+                    doc.setFont("helvetica", "normal")
+                    let grandPositive = 0
+                    let grandTotal = 0
+
+                    sortedSecs.forEach((sec, idx) => {
+                      const secQuestions = grouped[sec]
+                      // Skip Comments
+                      if (sec.toLowerCase().includes("comment")) return
+
+                      let secPositive = 0
+                      let secTotal = 0
+                      secQuestions.forEach(q => {
+                        if (q.questionType !== "text") {
+                          const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
+                          const opts = q.options || Object.keys(q.counts)
+                          secPositive += (q.counts[opts[0]] || 0) + (q.counts[opts[1]] || 0)
+                          secTotal += total
+                        }
+                      })
+                      grandPositive += secPositive
+                      grandTotal += secTotal
+                      const pct = secTotal > 0 ? Math.round((secPositive / secTotal) * 100) : 0
+
+                      if (idx % 2 === 0) {
+                        doc.setFillColor(248, 248, 248)
+                        doc.rect(14, y - 5, pageWidth - 28, 8, "F")
+                      }
+
+                      const cleanName = sec.replace(/^[A-F]\.\s*/, "")
+                      doc.text(truncateText(cleanName, pageWidth - 50), 16, y)
+                      doc.setFont("helvetica", "bold")
+                      doc.text(`${pct}%`, pageWidth - 28, y)
+                      doc.setFont("helvetica", "normal")
+                      y += 8
+                    })
+
+                    // Overall row
+                    const overallPct = grandTotal > 0 ? Math.round((grandPositive / grandTotal) * 100) : 0
+                    doc.setFillColor(55, 65, 81)
+                    doc.rect(14, y - 5, pageWidth - 28, 9, "F")
+                    doc.setTextColor(255, 255, 255)
+                    doc.setFont("helvetica", "bold")
+                    doc.text("OVERALL", 16, y)
+                    doc.text(`${overallPct}%`, pageWidth - 28, y)
+                    doc.setTextColor(30, 30, 30)
+                    y += 16
+
+                    // --- Per-section question tables (comments last) ---
+                    const orderedSecs = [...sortedSecs.filter(s => !s.toLowerCase().includes("comments")), ...sortedSecs.filter(s => s.toLowerCase().includes("comment"))]
+                    orderedSecs.forEach(sec => {
+                      const secQuestions = grouped[sec]
+                      const cleanName = sec.replace(/^[A-F]\.\s*/, "")
+                      const isVerbal = sec.toLowerCase().includes("comments")
+
+                      // Page break
+                      if (y > pageHeight - 50) {
+                        doc.addPage()
+                        y = 18
+                      }
+
+                      // Section title
+                      doc.setFontSize(11)
+                      doc.setFont("helvetica", "bold")
+                      doc.text(cleanName, 14, y)
+                      y += 8
+
+                      if (isVerbal) {
+                        // For Comment, list text responses
+                        doc.setFontSize(9)
+                        doc.setFont("helvetica", "normal")
+                        secQuestions.forEach(q => {
+                          doc.setFont("helvetica", "bold")
+                          const lines = doc.splitTextToSize(q.questionText, pageWidth - 30)
+                          lines.forEach((line: string) => {
+                            if (y > pageHeight - 15) { doc.addPage(); y = 18 }
+                            doc.text(line, 16, y)
+                            y += 5
+                          })
+                          doc.setFont("helvetica", "normal")
+                          if (q.textResponses && q.textResponses.length > 0) {
+                            q.textResponses.forEach((txt, i) => {
+                              if (y > pageHeight - 15) { doc.addPage(); y = 18 }
+                              const respLines = doc.splitTextToSize(`${i + 1}. ${txt}`, pageWidth - 36)
+                              respLines.forEach((line: string) => {
+                                if (y > pageHeight - 15) { doc.addPage(); y = 18 }
+                                doc.text(line, 20, y)
+                                y += 5
+                              })
+                            })
+                          } else {
+                            doc.text("No text responses.", 20, y)
+                            y += 5
+                          }
+                          y += 4
+                        })
+                      } else {
+                        // Likert questions table
+                        // Get option headers from the first question
+                        const optHeaders = secQuestions[0]?.options || Object.keys(secQuestions[0]?.counts || {})
+
+                        // Table header
+                        doc.setFillColor(55, 65, 81)
+                        const headerH = 8
+                        doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
+                        doc.setFontSize(8)
+                        doc.setTextColor(255, 255, 255)
+                        doc.setFont("helvetica", "bold")
+                        doc.text("#", 16, y)
+                        doc.text("Question", 24, y)
+                        // Option columns
+                        const optStartX = pageWidth - 28 - (optHeaders.length * 22)
+                        optHeaders.forEach((opt, oi) => {
+                          const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
+                          doc.text(label, optStartX + (oi * 22), y)
+                        })
+                        doc.text("Total", pageWidth - 28, y)
+                        y += 6
+
+                        doc.setTextColor(30, 30, 30)
+                        doc.setFont("helvetica", "normal")
+
+                        secQuestions.forEach((q, qi) => {
+                          if (q.questionType === "text") return
+
+                          doc.setFontSize(8)
+                          const maxQWidth = optStartX - 28
+                          const qLines = doc.splitTextToSize(q.questionText, maxQWidth)
+                          const lineH = 4.5
+                          const rowH = Math.max(8, qLines.length * lineH + 3)
+
+                          // Check if row fits on page, if not add new page with header
+                          if (y + rowH - 5 > pageHeight - 15) {
+                            doc.addPage()
+                            y = 18
+                            doc.setFillColor(55, 65, 81)
+                            doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
+                            doc.setFontSize(8)
+                            doc.setTextColor(255, 255, 255)
+                            doc.setFont("helvetica", "bold")
+                            doc.text("#", 16, y)
+                            doc.text("Question", 24, y)
+                            optHeaders.forEach((opt, oi) => {
+                              const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
+                              doc.text(label, optStartX + (oi * 22), y)
+                            })
+                            doc.text("Total", pageWidth - 28, y)
+                            doc.setTextColor(30, 30, 30)
+                            doc.setFont("helvetica", "normal")
+                            y += 6
+                          }
+
+                          // Alternate row background
+                          if (qi % 2 === 0) {
+                            doc.setFillColor(248, 248, 248)
+                            doc.rect(14, y - 5, pageWidth - 28, rowH, "F")
+                          }
+
+                          doc.setFontSize(8)
+                          doc.text(`${qi + 1}`, 16, y)
+                          // Print each line of the question text
+                          qLines.forEach((line: string, li: number) => {
+                            doc.text(line, 24, y + (li * lineH))
+                          })
+
+                          const opts = q.options || Object.keys(q.counts)
+                          const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
+                          opts.forEach((opt, oi) => {
+                            const count = q.counts[opt] || 0
+                            doc.text(`${count}`, optStartX + (oi * 22), y)
+                          })
+                          doc.text(`${total}`, pageWidth - 28, y)
+                          y += rowH
+                        })
+                      }
+                      y += 8
+                    })
+
+                    const safeName = profName.replace(/[^a-zA-Z0-9]/g, "_")
+                    doc.save(`${safeName}_evaluation_results.pdf`)
+                  }}
+                  disabled={Object.values(questionAggregates).length === 0}
+                  className="gap-1.5 bg-white/10 border-white/30 text-white hover:bg-white/20 text-xs sm:text-sm"
+                >
+                  <FileDown className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  <span className="hidden sm:inline">Export PDF</span>
+                </Button>
                 <button
-                  onClick={() => setIsQuestionResultsDialogOpen(false)}
+                  onClick={() => {
+                    setSelectedSectionFilter("A. Instructional Competence")
+                    setIsQuestionResultsDialogOpen(false)
+                  }}
                   className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center hover:bg-gray-700 transition-colors text-white flex-shrink-0"
+                  aria-label="Close dialog"
                 >
                   <X className="h-4 w-4 sm:h-4 sm:w-4 md:h-5 md:w-5" />
                 </button>
               </div>
             </div>
 
+            {/* Section Filter Tabs */}
+            <div className="bg-white border-b flex-shrink-0">
+              <div className="flex w-full">
+                {SECTION_ORDER.filter((_, i) => i % 2 === 0).map((sectionName) => {
+                  const isSelected = selectedSectionFilter.toLowerCase() === sectionName.toLowerCase()
+                  return (
+                    <button
+                      key={sectionName}
+                      onClick={() => setSelectedSectionFilter(sectionName)}
+                      className={`flex-1 px-2 py-2.5 text-[10px] sm:text-xs font-medium transition-all text-center border-b-2 ${isSelected
+                        ? "border-b-blue-500 text-blue-600 bg-blue-50"
+                        : "border-b-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                        }`}
+                    >
+                      {sectionName.replace(/^[A-F]\. /, "")}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-6">
               {Object.values(questionAggregates).length > 0 ? (
-                <div className="grid gap-3 sm:gap-4 md:gap-6 w-full max-w-full">
-                  {Object.values(questionAggregates).map((q, index) => (
-                    <Card key={q.questionId} className="border-2 shadow-md hover:shadow-lg transition-shadow w-full max-w-full overflow-hidden">
-                      <CardContent className="p-3 sm:p-4 md:pt-4 w-full max-w-full overflow-hidden">
-                        <div className="mb-3 sm:mb-4 flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-4 pb-2 sm:pb-3 border-b w-full">
-                          <div className="flex-1 min-w-0 w-full sm:w-auto">
-                            <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 flex-wrap">
-                              <Badge variant="secondary" className="bg-blue-500 text-white text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-                                Q{index + 1}
-                              </Badge>
-                              <Badge variant="outline" className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
-                                {q.questionType === "text" ? "Text" : "Likert"}
-                              </Badge>
+                <div className="space-y-6 w-full max-w-full">
+                  {/* Group questions by section */}
+                  {(() => {
+                    // Group aggregates by section
+                    const groupedBySection: Record<string, QuestionAggregate[]> = {}
+                    Object.values(questionAggregates).forEach((q) => {
+                      const section = q.section || "Other"
+                      if (!groupedBySection[section]) {
+                        groupedBySection[section] = []
+                      }
+                      groupedBySection[section].push(q)
+                    })
+
+                    // Sort sections by predefined order
+                    const sortedSections = Object.keys(groupedBySection).sort((a, b) => {
+                      const aIndex = SECTION_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase())
+                      const bIndex = SECTION_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase())
+                      if (aIndex === -1 && bIndex === -1) return 0
+                      if (aIndex === -1) return 1
+                      if (bIndex === -1) return -1
+                      return aIndex - bIndex
+                    })
+
+                    // Filter sections based on selected filter
+                    // Normalize section names - handle both "and" and "&" variants, remove prefixes and extra spaces
+                    const normalizeSection = (s: string) => {
+                      let result = s.toLowerCase()
+                        .replace(/^[a-f]\.\s*/, "") // Remove A., B., C., D., E., F. prefixes
+                        .replace(/\s+/g, " ") // Normalize multiple spaces to single
+                        .replace(/\s*&\s*/g, " and ") // Normalize & to 'and'
+                        .replace(/\s+and\s+/g, " and ") // Normalize 'and' spacing
+                        .trim()
+                      // Map old "verbal interpretation" to "comments"
+                      if (result === "verbal interpretation") result = "comments"
+                      return result
+                    }
+                    const filterNormalized = normalizeSection(selectedSectionFilter)
+                    const filteredSections = selectedSectionFilter === "all"
+                      ? sortedSections
+                      : sortedSections.filter(s => {
+                        const sNormalized = normalizeSection(s)
+                        // Check exact match or partial match in both directions
+                        return sNormalized === filterNormalized ||
+                          sNormalized.includes(filterNormalized) ||
+                          filterNormalized.includes(sNormalized)
+                      })
+
+                    return filteredSections.map((sectionName, sectionIndex) => {
+                      const sectionQuestions = groupedBySection[sectionName]
+                      const sectionColors = SECTION_COLORS[sectionName] || { bg: "bg-gray-50", border: "border-gray-500", text: "text-gray-700" }
+
+                      // Calculate section overall result (average of positive responses)
+                      let totalPositive = 0
+                      let totalResponses = 0
+                      sectionQuestions.forEach(q => {
+                        if (q.questionType !== "text") {
+                          const counts = q.counts
+                          const total = Object.values(counts).reduce((a, b) => a + b, 0)
+                          // Consider first two options as positive (e.g., "Strongly Agree", "Agree")
+                          const options = q.options || Object.keys(counts)
+                          const positiveCount = (counts[options[0]] || 0) + (counts[options[1]] || 0)
+                          totalPositive += positiveCount
+                          totalResponses += total
+                        }
+                      })
+                      const overallPercentage = totalResponses > 0 ? Math.round((totalPositive / totalResponses) * 100) : 0
+
+                      return (
+                        <div key={sectionName} className="space-y-4">
+                          {/* Section Header - Hide for Comments */}
+                          {!sectionName.toLowerCase().includes("comment") && (
+                            <div className={`${sectionColors.bg} ${sectionColors.border} border-l-4 rounded-lg p-4 shadow-sm`}>
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                <div>
+                                  <h3 className={`text-lg font-bold ${sectionColors.text}`}>
+                                    {sectionName}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground">
+                                    {sectionQuestions.length} question{sectionQuestions.length !== 1 ? "s" : ""} in this section
+                                  </p>
+                                </div>
+                                <div className={`${sectionColors.bg} border ${sectionColors.border} rounded-lg px-4 py-2 text-center`}>
+                                  <div className={`text-2xl font-bold ${sectionColors.text}`}>
+                                    {overallPercentage}%
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Overall Positive</div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-xs sm:text-sm font-medium break-words">
-                              {q.questionText}
-                            </div>
-                          </div>
-                          <div className="text-right bg-blue-50 rounded p-1.5 sm:p-2 border border-blue-200 flex-shrink-0 w-full sm:w-auto">
-                            <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-600">
-                              {q.questionType === "text"
-                                ? q.textResponses?.length || 0
-                                : Object.values(q.counts).reduce((a, b) => a + b, 0)}
-                            </div>
-                            <div className="text-[10px] sm:text-xs text-muted-foreground">Responses</div>
+                          )}
+
+                          {/* Section Questions */}
+                          <div className="grid gap-3 sm:gap-4 md:gap-6 w-full max-w-full pl-4">
+                            {sectionQuestions.map((q, questionIndex) => {
+                              // Calculate global question number
+                              let globalIndex = 0
+                              for (let i = 0; i < sectionIndex; i++) {
+                                const prevSection = sortedSections[i]
+                                globalIndex += groupedBySection[prevSection].length
+                              }
+                              globalIndex += questionIndex + 1
+
+                              return (
+                                <Card key={q.questionId} className={`border-2 ${sectionColors.border} shadow-md hover:shadow-lg transition-shadow w-full max-w-full overflow-hidden`}>
+                                  <CardContent className="p-3 sm:p-4 md:pt-4 w-full max-w-full overflow-hidden">
+                                    <div className="mb-3 sm:mb-4 flex flex-col sm:flex-row items-start justify-between gap-2 sm:gap-4 pb-2 sm:pb-3 border-b w-full">
+                                      <div className="flex-1 min-w-0 w-full sm:w-auto">
+                                        <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 sm:mb-2 flex-wrap">
+                                          <Badge variant="secondary" className={`${sectionColors.bg} ${sectionColors.text} text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5`}>
+                                            Q{globalIndex}
+                                          </Badge>
+                                          <Badge variant="outline" className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5">
+                                            {q.questionType === "text" ? "Text" : "Likert"}
+                                          </Badge>
+                                        </div>
+                                        <div className="text-xs sm:text-sm font-medium break-words">
+                                          {q.questionText}
+                                        </div>
+                                      </div>
+                                      <div className={`text-right ${sectionColors.bg} rounded p-1.5 sm:p-2 border ${sectionColors.border} flex-shrink-0 w-full sm:w-auto`}>
+                                        <div className={`text-lg sm:text-xl md:text-2xl font-bold ${sectionColors.text}`}>
+                                          {q.questionType === "text"
+                                            ? q.textResponses?.length || 0
+                                            : Object.values(q.counts).reduce((a, b) => a + b, 0)}
+                                        </div>
+                                        <div className="text-[10px] sm:text-xs text-muted-foreground">Responses</div>
+                                      </div>
+                                    </div>
+                                    {q.questionType === "text" ? (
+                                      <div className="space-y-2">
+                                        {q.textResponses && q.textResponses.length > 0 ? (
+                                          <div className="space-y-2 max-h-48 overflow-auto pr-2">
+                                            {q.textResponses.map((txt, i) => (
+                                              <div key={i} className="rounded-md border p-2 text-sm bg-background">
+                                                {txt}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <div className="text-sm text-muted-foreground">No text responses yet.</div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                          {(q.options && q.options.length > 0 ? q.options : Object.keys(q.counts)).map((opt, idx) => {
+                                            const count = q.counts[opt] || 0
+                                            const total = Object.values(q.counts).reduce((a, b) => a + b, 0) || 1
+                                            const pct = Math.round((count / total) * 100)
+                                            const bg = chartColors[idx % chartColors.length] + "20"
+                                            const border = chartColors[idx % chartColors.length]
+                                            return (
+                                              <span
+                                                key={opt}
+                                                className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs"
+                                                style={{ backgroundColor: bg, border: `1px solid ${border}`, color: border }}
+                                              >
+                                                <span className="font-medium">{opt}</span>
+                                                <span className="text-muted-foreground" style={{ color: border }}>
+                                                  {count} ({pct}%)
+                                                </span>
+                                              </span>
+                                            )
+                                          })}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4 sm:gap-6 w-full">
+                                          <div className="w-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-3 shadow-sm border border-blue-100" id={`pie-chart-${q.questionId}`} style={{ height: "320px" }}>
+                                            {!googleChartsLoaded && (
+                                              <div className="flex items-center justify-center h-full">
+                                                <p className="text-muted-foreground text-sm">Loading chart...</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="w-full bg-gradient-to-br from-slate-50 to-gray-50 rounded-lg p-3 shadow-sm border border-gray-200" id={`bar-chart-${q.questionId}`} style={{ height: "320px" }}>
+                                            {!googleChartsLoaded && (
+                                              <div className="flex items-center justify-center h-full">
+                                                <p className="text-muted-foreground text-sm">Loading chart...</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              )
+                            })}
                           </div>
                         </div>
-                        {q.questionType === "text" ? (
-                          <div className="space-y-2">
-                            {q.textResponses && q.textResponses.length > 0 ? (
-                              <div className="space-y-2 max-h-48 overflow-auto pr-2">
-                                {q.textResponses.map((txt, i) => (
-                                  <div key={i} className="rounded-md border p-2 text-sm bg-background">
-                                    {txt}
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-sm text-muted-foreground">No text responses yet.</div>
-                            )}
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex flex-wrap gap-2 mb-2">
-                              {(q.options && q.options.length > 0 ? q.options : Object.keys(q.counts)).map((opt, idx) => {
-                                const count = q.counts[opt] || 0
-                                const total = Object.values(q.counts).reduce((a, b) => a + b, 0) || 1
-                                const pct = Math.round((count / total) * 100)
-                                const bg = chartColors[idx % chartColors.length] + "20"
-                                const border = chartColors[idx % chartColors.length]
-                                return (
-                                  <span
-                                    key={opt}
-                                    className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs"
-                                    style={{ backgroundColor: bg, border: `1px solid ${border}`, color: border }}
-                                  >
-                                    <span className="font-medium">{opt}</span>
-                                    <span className="text-muted-foreground" style={{ color: border }}>
-                                      {count} ({pct}%)
-                                    </span>
-                                  </span>
-                                )
-                              })}
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 sm:gap-6 w-full">
-                              <div className="w-full bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-3 shadow-sm border border-blue-100" id={`pie-chart-${q.questionId}`} style={{ height: "320px" }}>
-                                {!googleChartsLoaded && (
-                                  <div className="flex items-center justify-center h-full">
-                                    <p className="text-muted-foreground text-sm">Loading chart...</p>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="w-full bg-gradient-to-br from-slate-50 to-gray-50 rounded-lg p-3 shadow-sm border border-gray-200" id={`bar-chart-${q.questionId}`} style={{ height: "320px" }}>
-                                {!googleChartsLoaded && (
-                                  <div className="flex items-center justify-center h-full">
-                                    <p className="text-muted-foreground text-sm">Loading chart...</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
+                      )
+                    })
+                  })()}
                 </div>
               ) : (
                 <div className="text-center py-12">

@@ -32,8 +32,10 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Clock } from "lucide-react"
 import { evaluationDeadlineService } from "@/lib/database"
+import { evaluationHistoryService } from "@/lib/evaluation-history-service"
 import type { EvaluationDeadline } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
+import { sanitizeErrorMessage } from "@/lib/utils"
 
 // Interface for date/time fields
 interface DateTimeFields {
@@ -41,7 +43,7 @@ interface DateTimeFields {
   time: string // HH:mm format
 }
 
-export function EvaluationDurationManagement() {
+export function EvaluationDurationManagement(): JSX.Element {
   const { toast } = useToast()
 
   // Deadline state variables
@@ -265,18 +267,18 @@ export function EvaluationDurationManagement() {
       setIsLoadingDeadline(true)
 
       // Log the exact values being saved for debugging
-      console.log("Saving deadline with exact values:", {
-        startDateTime,
-        endDateTime,
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        startDateLocal: startDate.toLocaleString(),
-        endDateLocal: endDate.toLocaleString(),
-      })
+
 
       // Always update the single document (create if doesn't exist)
       // This will save the exact date/time values to the database
       await evaluationDeadlineService.create(startDate, endDate, true)
+
+      // Archive all previous evaluation results to History when a new deadline is set
+      // This preserves the data so professors can view past evaluation periods
+      const archiveResult = await evaluationHistoryService.archiveEvaluationResults(startDate, endDate)
+      if (archiveResult.success && archiveResult.archivedCount > 0) {
+        console.log(`Archived ${archiveResult.archivedCount} evaluation results to history`)
+      }
 
       toast({
         title: activeDeadline ? "Deadline Updated" : "Deadline Set",
@@ -294,11 +296,11 @@ export function EvaluationDurationManagement() {
           hour: '2-digit',
           minute: '2-digit',
           hour12: true
-        })}`,
+        })}${archiveResult.archivedCount > 0 ? ` (${archiveResult.archivedCount} previous evaluations archived)` : ''}`,
       })
 
       // Reload deadline to verify it was saved correctly
-      console.log("🔄 Reloading deadline after save...")
+
 
       // Wait a moment for Firestore to propagate the write
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -308,22 +310,14 @@ export function EvaluationDurationManagement() {
 
       // If getActive returns null, try getAll() as fallback (in case isActive check fails)
       if (!deadline) {
-        console.log("🔄 getActive() returned null, trying getAll() as fallback...")
         const allDeadlines = await evaluationDeadlineService.getAll()
         if (allDeadlines.length > 0) {
           deadline = allDeadlines[0]
-          console.log("✅ Found deadline via getAll() fallback")
         }
       }
 
       if (deadline) {
         setActiveDeadline(deadline)
-        console.log("✅ Deadline reloaded successfully:", {
-          id: deadline.id,
-          startDate: deadline.startDate.toISOString(),
-          endDate: deadline.endDate.toISOString(),
-          isActive: deadline.isActive,
-        })
       } else {
         console.warn("⚠️ Deadline was saved but could not be reloaded immediately.")
         console.warn("⚠️ This might be a timing issue. Trying again in 1 second...")
@@ -349,10 +343,9 @@ export function EvaluationDurationManagement() {
       setIsDeadlineDialogOpen(false)
     } catch (error) {
       console.error("Error saving deadline:", error)
-      const errorMessage = (error as any)?.message || "Unknown error occurred"
       toast({
         title: "Error Saving Deadline",
-        description: `Failed to save deadline: ${errorMessage}. Please check the console for details.`,
+        description: `Failed to save deadline. ${sanitizeErrorMessage(error)}`,
         variant: "destructive",
       })
     } finally {
@@ -369,19 +362,23 @@ export function EvaluationDurationManagement() {
         <p className="text-xs sm:text-sm md:text-base text-muted-foreground">Set the evaluation period and deadline for student submissions</p>
       </div>
 
-      {/* Deadline Banner */}
-      {activeDeadline ? (
-        <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-blue-500/5">
-          <CardContent className="pt-4 sm:pt-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-              <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1">
-                <div className="p-2 sm:p-3 rounded-lg bg-primary/10 flex-shrink-0">
-                  <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm sm:text-base text-foreground">Evaluation Period</h3>
-                  <p className="text-xs sm:text-sm text-muted-foreground break-words">
-                    Start: {new Date(activeDeadline.startDate).toLocaleString('en-US', {
+      {/* Deadline Banner - Clean centered design */}
+      <Card className="border-dashed border-2 border-muted-foreground/25 rounded-xl">
+        <CardContent className="py-8 sm:py-10">
+          <div className="flex flex-col items-center justify-center text-center">
+            {/* Clock Icon */}
+            <div className="mb-4">
+              <Clock className="h-12 w-12 sm:h-14 sm:w-14 text-muted-foreground" />
+            </div>
+
+            {activeDeadline ? (
+              <>
+                {/* Has Deadline - Show dates and status */}
+                <h3 className="text-base sm:text-lg font-semibold mb-3">Evaluation Period</h3>
+                <div className="space-y-1.5 text-sm text-muted-foreground mb-4">
+                  <p>
+                    <span className="font-medium text-foreground">Start:</span>{" "}
+                    {new Date(activeDeadline.startDate).toLocaleString('en-US', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
@@ -389,8 +386,9 @@ export function EvaluationDurationManagement() {
                       minute: '2-digit'
                     })}
                   </p>
-                  <p className="text-xs sm:text-sm text-muted-foreground break-words">
-                    End: {new Date(activeDeadline.endDate).toLocaleString('en-US', {
+                  <p>
+                    <span className="font-medium text-foreground">End:</span>{" "}
+                    {new Date(activeDeadline.endDate).toLocaleString('en-US', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
@@ -398,50 +396,49 @@ export function EvaluationDurationManagement() {
                       minute: '2-digit'
                     })}
                   </p>
-                  {deadlineStatus && (
-                    <>
-                      {deadlineStatus.status === "ended" && (
-                        <Badge variant="destructive" className="mt-1.5 sm:mt-2 text-xs">Ended</Badge>
-                      )}
-                      {deadlineStatus.status === "not_started" && (
-                        <Badge variant="secondary" className="mt-1.5 sm:mt-2 text-xs">Not Started</Badge>
-                      )}
-                      {deadlineStatus.status === "open" && (
-                        <Badge variant="default" className="mt-1.5 sm:mt-2 bg-green-500 text-xs">Open</Badge>
-                      )}
-                    </>
-                  )}
                 </div>
-              </div>
-              <Button
-                variant="outline"
-                onClick={handleOpenDeadlineDialog}
-                className="w-full sm:w-auto text-sm"
-              >
-                Update Deadline
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="border-dashed border-2 border-muted-foreground/25">
-          <CardContent className="pt-4 sm:pt-6">
-            <div className="flex flex-col items-center justify-center py-6 sm:py-8 text-center px-4">
-              <Clock className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mb-3 sm:mb-4" />
-              <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">No Evaluation Period Set</h3>
-              <p className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4 max-w-md">
-                Set the start and end date for the evaluation period to allow students to submit evaluations.
-              </p>
-              <Button
-                onClick={handleOpenDeadlineDialog}
-                className="text-sm"
-              >
-                Set Evaluation Deadline
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
+                {/* Status Badge */}
+                {deadlineStatus && (
+                  <div className="mb-4">
+                    {deadlineStatus.status === "ended" && (
+                      <Badge variant="destructive" className="text-xs">Closed</Badge>
+                    )}
+                    {deadlineStatus.status === "not_started" && (
+                      <Badge variant="secondary" className="text-xs">Not Started</Badge>
+                    )}
+                    {deadlineStatus.status === "open" && (
+                      <Badge variant="default" className="bg-green-500 text-xs">Open</Badge>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  variant="default"
+                  onClick={handleOpenDeadlineDialog}
+                  className="text-sm"
+                >
+                  Update Deadline
+                </Button>
+              </>
+            ) : (
+              <>
+                {/* No Deadline - Show setup message */}
+                <h3 className="text-base sm:text-lg font-semibold mb-2">No Evaluation Period Set</h3>
+                <p className="text-sm text-muted-foreground mb-4 max-w-md">
+                  Set the start and end date for the evaluation period to allow students to submit evaluations.
+                </p>
+                <Button
+                  onClick={handleOpenDeadlineDialog}
+                  className="text-sm"
+                >
+                  Set Evaluation Deadline
+                </Button>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Deadline Setting Dialog */}
       <Dialog open={isDeadlineDialogOpen} onOpenChange={setIsDeadlineDialogOpen}>

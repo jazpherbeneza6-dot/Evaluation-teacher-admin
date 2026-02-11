@@ -28,7 +28,7 @@
 import { useMemo } from "react"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Users, Building2, FileText, TrendingUp } from "lucide-react"
+import { Users, Building2, FileText, TrendingUp, CheckCircle2 } from "lucide-react"
 import type { EvaluationStats, Department, Professor } from "@/lib/types"
 import { RealTimeCharts } from "@/components/charts/real-time-charts"
 import { TopPerformingProfessors } from "./top-performing-professors"
@@ -39,19 +39,21 @@ interface DashboardOverviewProps {
   departments: Department[] // Array ng departments
   professors: Professor[] // Array ng professors
   totalEvaluations: number // Total number ng submitted evaluations
+  totalStudents: number // Total number of registered students
+  completedStudents: number // Students who completed ALL assigned evaluations
 }
 
-export function DashboardOverview({ stats, departments, professors, totalEvaluations }: DashboardOverviewProps) {
+export function DashboardOverview({ stats, departments, professors, totalEvaluations, totalStudents, completedStudents }: DashboardOverviewProps) {
   // useMemo para sa efficient calculations - hindi magre-recalculate unless mag-change ang dependencies
   const overviewData = useMemo(() => {
     // Calculate overall completion rate
     // Total submitted evaluations = sum of all submitted evaluations across all professors
     const totalSubmittedEvaluations = stats.reduce((sum, stat) => sum + stat.submittedEvaluations, 0)
-    
+
     // Total possible evaluations = sum of totalStudents for all professors
     // Since each professor has the same totalStudents (all students), this equals professors × students
     const totalPossibleEvaluations = stats.reduce((sum, stat) => sum + stat.totalStudents, 0)
-    
+
     // Calculate overall completion rate based on actual submitted vs possible
     const overallCompletionRate =
       totalPossibleEvaluations > 0 ? Math.round((totalSubmittedEvaluations / totalPossibleEvaluations) * 100) : 0
@@ -86,6 +88,8 @@ export function DashboardOverview({ stats, departments, professors, totalEvaluat
 
     return {
       totalEvaluations: totalSubmittedEvaluations, // Use calculated total submitted
+      totalSubmittedEvaluations,
+      totalPossibleEvaluations,
       overallCompletionRate,
       departmentStats,
       topProfessors,
@@ -101,12 +105,39 @@ export function DashboardOverview({ stats, departments, professors, totalEvaluat
     "hsl(var(--chart-5))",
   ]
 
+  // Calculate accurate completion rate based on students who completed ALL assigned evaluations
+  const clampedRate = totalStudents > 0 ? Math.min(Math.round((completedStudents / totalStudents) * 100), 100) : 0
+
   return (
     <div className="space-y-6">
-      {/* Header section */}
-      <div>
-        <h2 className="text-3xl font-bold text-foreground">Dashboard Overview</h2>
-        <p className="text-muted-foreground">Real-time evaluation completion statistics</p>
+      {/* Header section with progress bar on the right */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground">Dashboard Overview</h2>
+          <p className="text-muted-foreground">Real-time evaluation completion statistics</p>
+        </div>
+
+        {/* Overall Evaluation Completion - Compact on the right */}
+        <div className="flex items-center gap-3 min-w-[280px]">
+          <div className="flex flex-col gap-1 flex-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">Overall Evaluation Completion</span>
+            </div>
+            <Progress
+              value={clampedRate}
+              className={`h-2 ${clampedRate >= 75 ? '[&>[data-slot=progress-indicator]]:bg-emerald-500' :
+                clampedRate >= 50 ? '[&>[data-slot=progress-indicator]]:bg-blue-500' :
+                  clampedRate >= 25 ? '[&>[data-slot=progress-indicator]]:bg-amber-500' : '[&>[data-slot=progress-indicator]]:bg-red-500'
+                }`}
+            />
+          </div>
+          <span className={`text-lg font-bold min-w-[3rem] text-right ${clampedRate >= 75 ? 'text-emerald-600' :
+            clampedRate >= 50 ? 'text-blue-600' :
+              clampedRate >= 25 ? 'text-amber-600' : 'text-red-600'
+            }`}>
+            {clampedRate}%
+          </span>
+        </div>
       </div>
 
       {/* Overview Cards - 4 na cards na nagpapakita ng key metrics */}
@@ -144,7 +175,7 @@ export function DashboardOverview({ stats, departments, professors, totalEvaluat
           <CardContent className="pt-6">
             <div className="flex items-center justify-between pb-2 border-b border-border mb-4">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-sm font-medium">Total Evaluations</CardTitle>
+                <CardTitle className="text-sm font-medium">Total of Respondents</CardTitle>
                 <FileText className="h-4 w-4 text-muted-foreground" />
               </div>
             </div>
@@ -153,18 +184,17 @@ export function DashboardOverview({ stats, departments, professors, totalEvaluat
           </CardContent>
         </Card>
 
-        {/* Card 4: Overall Completion Rate */}
+        {/* Card 4: Registered Respondents */}
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between pb-2 border-b border-border mb-4">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-sm font-medium">Overall Completion</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">Registered Respondents</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
               </div>
             </div>
-            <div className="text-2xl font-bold">{overviewData.overallCompletionRate}%</div>
-            {/* Progress bar para sa visual representation ng completion rate */}
-            <Progress value={overviewData.overallCompletionRate} className="mt-2" />
+            <div className="text-2xl font-bold">{totalStudents}</div>
+            <p className="text-xs text-muted-foreground">Students registered to answer evaluations</p>
           </CardContent>
         </Card>
       </div>

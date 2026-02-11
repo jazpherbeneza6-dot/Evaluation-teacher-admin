@@ -1,11 +1,11 @@
 /*
- * API ROUTE: Upload Department Image to Database
+ * API ROUTE: Upload Professor Image to Database
  * 
  * SIMPLE EXPLANATION:
- * 1. Ito ang API endpoint para sa pag-upload ng department profile picture
- * 2. Tumatanggap ng image file at department information
+ * 1. Ito ang API endpoint para sa pag-upload ng professor profile picture
+ * 2. Tumatanggap ng image file at professor information
  * 3. Nag-convert ng image sa base64 data URI
- * 4. Nag-save directly sa database (Firestore)
+ * 4. Nag-save directly sa database (Firestore) as profilePictureUrl
  * 
  * MGA FEATURES:
  * - File upload handling
@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { departmentService } from '@/lib/database'
+import { professorService } from '@/lib/database'
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const departmentId = formData.get('departmentId') as string
-    const departmentName = formData.get('departmentName') as string
+    const professorId = formData.get('professorId') as string
+    const professorName = formData.get('professorName') as string
 
     if (!file) {
       return NextResponse.json(
@@ -33,20 +33,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!departmentId || !departmentName) {
+    if (!professorId || !professorName) {
       return NextResponse.json(
-        { error: 'Department information missing', message: 'Department ID and name are required.' },
+        { error: 'Professor information missing', message: 'Professor ID and name are required.' },
         { status: 400 }
       )
     }
 
-    // Verify department exists
-    const departments = await departmentService.getAll()
-    const existingDepartment = departments.find(d => d.id === departmentId)
+    // Verify professor exists
+    const professors = await professorService.getAll()
+    const existingProfessor = professors.find(p => p.id === professorId)
     
-    if (!existingDepartment) {
+    if (!existingProfessor) {
       return NextResponse.json(
-        { error: 'Department not found', message: `Department with ID "${departmentId}" does not exist.` },
+        { error: 'Professor not found', message: `Professor with ID "${professorId}" does not exist.` },
         { status: 404 }
       )
     }
@@ -82,8 +82,8 @@ export async function POST(request: NextRequest) {
     const base64 = buffer.toString('base64')
     const dataUri = `data:${file.type};base64,${base64}`
     
-    // Save directly to database
-    await departmentService.update(departmentId, departmentName, dataUri)
+    // Save directly to database as profilePictureUrl
+    await professorService.updateProfilePicture(professorId, dataUri)
     
     return NextResponse.json({
       success: true,

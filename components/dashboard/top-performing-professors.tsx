@@ -34,7 +34,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Trophy, Award, Star, TrendingUp, MoreHorizontal, Search, ArrowUpDown } from "lucide-react"
+import { Trophy, Award, Star, TrendingUp, MoreHorizontal, Search, ArrowUpDown, FileDown } from "lucide-react"
+import jsPDF from "jspdf"
 import { evaluationResultsService, type TopProfessorData } from "@/lib/evaluation-results-service"
 import { evaluationQuestionService } from "@/lib/database"
 import type { EvaluationResult, EvaluationQuestion } from "@/lib/types"
@@ -74,15 +75,15 @@ export function TopPerformingProfessors() {
           evaluationResultsService.getAll(),
           evaluationQuestionService.getActiveQuestions(),
         ])
-        
+
         if (!isMounted) return
 
         // Calculate top 3 per category
         const topByCat = evaluationResultsService.calculateTopPerformingProfessorsByCategory(results, questionsData, 3)
-        
+
         // Calculate all professors per category (no limit)
         const allByCat = evaluationResultsService.calculateTopPerformingProfessorsByCategory(results, questionsData, 999)
-        
+
         setTopByCategory(topByCat)
         setAllByCategory(allByCat)
         setQuestions(questionsData)
@@ -105,7 +106,7 @@ export function TopPerformingProfessors() {
     // Then set up real-time listener for updates
     unsubscribe = evaluationResultsService.onEvaluationResultsChange(async (results) => {
       if (!isMounted) return
-      
+
       try {
         // Fetch questions if not already loaded
         let currentQuestions = questionsRef.current
@@ -116,13 +117,13 @@ export function TopPerformingProfessors() {
             questionsRef.current = currentQuestions
           }
         }
-        
+
         // Calculate top 3 per category
         const topByCat = evaluationResultsService.calculateTopPerformingProfessorsByCategory(results, currentQuestions, 3)
-        
+
         // Calculate all professors per category (no limit)
         const allByCat = evaluationResultsService.calculateTopPerformingProfessorsByCategory(results, currentQuestions, 999)
-        
+
         if (isMounted) {
           setTopByCategory(topByCat)
           setAllByCategory(allByCat)
@@ -174,7 +175,7 @@ export function TopPerformingProfessors() {
         return "from-chart-3/8 via-chart-3/5 to-transparent" // Very light yellow gradient for others
     }
   }
-  
+
   // Get rank badge color - Using system primary and chart colors (for top 3)
   const getRankBadgeColor = (index: number) => {
     switch (index) {
@@ -197,7 +198,7 @@ export function TopPerformingProfessors() {
     if (score >= 60) return "text-orange-600" // Orange for satisfactory
     return "text-destructive" // Red for needs improvement
   }
-  
+
   // Get progress bar color based on score - Custom colors per performance level
   const getProgressBarColor = (score: number) => {
     if (score >= 90) return "bg-[#628141]" // Specific green for excellent
@@ -220,7 +221,7 @@ export function TopPerformingProfessors() {
   // Filter and sort all professors for the "View All" dialog
   const filteredAndSortedProfessors = useMemo(() => {
     if (!selectedCategory || !allByCategory[selectedCategory]) return []
-    
+
     let filtered = allByCategory[selectedCategory]
 
     // Filter by search term
@@ -259,6 +260,104 @@ export function TopPerformingProfessors() {
       setSortBy(column)
       setSortOrder("desc")
     }
+  }
+
+  // Export current category data to PDF
+  const exportToPDF = () => {
+    if (!selectedCategory || filteredAndSortedProfessors.length === 0) return
+
+    const doc = new jsPDF({ orientation: "landscape" })
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+
+    // Helper: truncate text to fit within a max width (in PDF units)
+    const truncateText = (text: string, maxWidth: number): string => {
+      if (doc.getTextWidth(text) <= maxWidth) return text
+      let truncated = text
+      while (truncated.length > 0 && doc.getTextWidth(truncated + "...") > maxWidth) {
+        truncated = truncated.slice(0, -1)
+      }
+      return truncated + "..."
+    }
+
+    // Title
+    doc.setFontSize(16)
+    doc.setFont("helvetica", "bold")
+    doc.text(`All Professors Performance by Category`, 14, 18)
+    doc.setFontSize(12)
+    doc.setFont("helvetica", "normal")
+    doc.text(`Category: ${selectedCategory}`, 14, 26)
+
+    // Table settings
+    const startY = 36
+    const colX = [14, 30, 100, 190, 240] // Rank, Professor, Department, Performance, Score
+    const colWidths = [14, 68, 88, 48, 40] // max width for each column (gap before next col minus padding)
+    const colHeaders = ["Rank", "Professor", "Department", "Performance", "Score"]
+    const rowHeight = 8
+
+    // Draw header
+    doc.setFillColor(245, 245, 245)
+    doc.rect(12, startY - 6, pageWidth - 24, rowHeight + 2, "F")
+    doc.setFontSize(10)
+    doc.setFont("helvetica", "bold")
+    doc.setTextColor(60, 60, 60)
+    colHeaders.forEach((header, i) => {
+      doc.text(header, colX[i], startY)
+    })
+
+    // Draw rows
+    doc.setFont("helvetica", "normal")
+    doc.setTextColor(30, 30, 30)
+    let y = startY + rowHeight + 2
+
+    filteredAndSortedProfessors.forEach((professor, index) => {
+      // Page break check
+      if (y > pageHeight - 20) {
+        doc.addPage()
+        y = 20
+        // Re-draw header on new page
+        doc.setFillColor(245, 245, 245)
+        doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
+        doc.setFont("helvetica", "bold")
+        doc.setTextColor(60, 60, 60)
+        colHeaders.forEach((header, i) => {
+          doc.text(header, colX[i], y)
+        })
+        doc.setFont("helvetica", "normal")
+        doc.setTextColor(30, 30, 30)
+        y += rowHeight + 2
+      }
+
+      // Alternate row background
+      if (index % 2 === 0) {
+        doc.setFillColor(252, 252, 252)
+        doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+      }
+
+      doc.text(`${index + 1}`, colX[0], y)
+      doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
+      doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
+      doc.text(getPerformanceLabel(professor.performanceScore), colX[3], y)
+      doc.text(`${professor.performanceScore}%`, colX[4], y)
+
+      y += rowHeight
+    })
+
+    // Summary footer
+    y += 6
+    if (y > pageHeight - 15) {
+      doc.addPage()
+      y = 20
+    }
+    doc.setFontSize(9)
+    doc.setTextColor(120, 120, 120)
+    doc.text(
+      `Showing ${filteredAndSortedProfessors.length} of ${allByCategory[selectedCategory]?.length || 0} professors in ${selectedCategory}`,
+      14,
+      y
+    )
+
+    doc.save(`professors_performance_${selectedCategory.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`)
   }
 
   // Get total count of all professors across all categories
@@ -310,17 +409,31 @@ export function TopPerformingProfessors() {
                     View All
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+                <DialogContent style={{ width: 'calc(100vw - 40px)', maxWidth: 'calc(100vw - 40px)' }} className="max-h-[90vh] flex flex-col">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-primary" />
+                      <TrendingUp className="h-5 w-5   text-primary" />
                       All Professors Performance by Category
                     </DialogTitle>
                     <DialogDescription>
                       Complete performance rankings for all professors by category
                     </DialogDescription>
                   </DialogHeader>
-                  
+
+                  {/* Export PDF Button */}
+                  <div className="flex justify-end -mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportToPDF}
+                      disabled={!selectedCategory || filteredAndSortedProfessors.length === 0}
+                      className="gap-2"
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Export PDF
+                    </Button>
+                  </div>
+
                   {/* Category Selection */}
                   <div className="pb-4 border-b">
                     <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full">
@@ -387,7 +500,6 @@ export function TopPerformingProfessors() {
                           <TableHead className="text-center">Performance</TableHead>
                           <TableHead className="text-center">Score</TableHead>
                           <TableHead className="text-center">Responses</TableHead>
-                          <TableHead className="text-center">Evaluations</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -436,16 +548,11 @@ export function TopPerformingProfessors() {
                                   </div>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-center">
-                                <div className="text-sm text-muted-foreground">
-                                  {professor.totalEvaluations}
-                                </div>
-                              </TableCell>
                             </TableRow>
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8">
+                            <TableCell colSpan={6} className="text-center py-8">
                               <div className="text-muted-foreground">
                                 {searchTerm ? "No professors found matching your search." : "No evaluation data available."}
                               </div>
@@ -473,9 +580,9 @@ export function TopPerformingProfessors() {
         <Tabs defaultValue={categories[0].key} className="w-full">
           <TabsList className="grid w-full grid-cols-5 mb-6 h-auto p-1.5 bg-muted/30 gap-1.5 rounded-lg">
             {categories.map((cat) => (
-              <TabsTrigger 
-                key={cat.key} 
-                value={cat.key} 
+              <TabsTrigger
+                key={cat.key}
+                value={cat.key}
                 className="text-[11px] sm:text-xs px-2 sm:px-3 py-2.5 sm:py-3 font-medium transition-all duration-200 data-[state=active]:bg-background data-[state=active]:shadow-md data-[state=active]:text-foreground data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground hover:text-foreground hover:bg-muted/50 whitespace-normal break-words leading-tight rounded-md min-h-[44px] flex items-center justify-center text-center"
               >
                 <span className="block">{cat.label}</span>
@@ -487,84 +594,84 @@ export function TopPerformingProfessors() {
             <TabsContent key={category.key} value={category.key} className="space-y-4 mt-0 mb-0">
               {topByCategory[category.key] && topByCategory[category.key].length > 0 ? (
                 topByCategory[category.key].slice(0, 3).map((professor, index) => (
-              <div
-                key={`${professor.professorId}-${index}`}
-                className={`relative overflow-hidden rounded-lg border border-border transition-all duration-300 hover:shadow-lg hover:scale-[1.02] bg-white dark:bg-card bg-gradient-to-r ${getGradientClass(index)}`}
-              >
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    {/* Left side: Rank, Medal, and Professor Info */}
-                    <div className="flex items-start gap-4 flex-1 min-w-0">
-                      {/* Rank Badge */}
-                      <div className={`flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full font-bold text-xl shadow-lg ${getRankBadgeColor(index)}`}>
-                        {index + 1}
-                      </div>
+                  <div
+                    key={`${professor.professorId}-${index}`}
+                    className={`relative overflow-hidden rounded-lg border border-border transition-all duration-300 hover:shadow-lg hover:scale-[1.02] bg-white dark:bg-card bg-gradient-to-r ${getGradientClass(index)}`}
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        {/* Left side: Rank, Medal, and Professor Info */}
+                        <div className="flex items-start gap-4 flex-1 min-w-0">
+                          {/* Rank Badge */}
+                          <div className={`flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full font-bold text-xl shadow-lg ${getRankBadgeColor(index)}`}>
+                            {index + 1}
+                          </div>
 
-                      {/* Medal Icon */}
-                      <div className="flex-shrink-0 mt-3">
-                        {getMedalIcon(index)}
-                      </div>
+                          {/* Medal Icon */}
+                          <div className="flex-shrink-0 mt-3">
+                            {getMedalIcon(index)}
+                          </div>
 
-                      {/* Professor Details */}
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <div>
-                          <h3 className="font-semibold text-base text-foreground break-words">
-                            {professor.professorName}
-                          </h3>
-                          <p className="text-sm text-muted-foreground break-words">
-                            {professor.departmentName}
-                          </p>
+                          {/* Professor Details */}
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div>
+                              <h3 className="font-semibold text-base text-foreground break-words">
+                                {professor.professorName}
+                              </h3>
+                              <p className="text-sm text-muted-foreground break-words">
+                                {professor.departmentName}
+                              </p>
+                            </div>
+
+                            {/* Performance Bar */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">Performance</span>
+                                <Badge
+                                  variant="outline"
+                                  className={`font-semibold ${getPerformanceColor(professor.performanceScore)}`}
+                                >
+                                  {getPerformanceLabel(professor.performanceScore)}
+                                </Badge>
+                              </div>
+                              <div className="relative">
+                                <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-500 ${getProgressBarColor(professor.performanceScore)}`}
+                                    style={{ width: `${professor.performanceScore}%` }}
+                                  />
+                                </div>
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <span className="text-[10px] font-bold text-white drop-shadow-md">
+                                    {professor.performanceScore}%
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Performance Bar */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">Performance</span>
-                            <Badge 
-                              variant="outline" 
-                              className={`font-semibold ${getPerformanceColor(professor.performanceScore)}`}
-                            >
-                              {getPerformanceLabel(professor.performanceScore)}
-                            </Badge>
+                        {/* Right side: Stats */}
+                        <div className="flex-shrink-0 text-right space-y-1">
+                          <div className={`font-bold text-2xl ${getPerformanceColor(professor.performanceScore)}`}>
+                            {professor.performanceScore}%
                           </div>
-                          <div className="relative">
-                            <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full transition-all duration-500 ${getProgressBarColor(professor.performanceScore)}`}
-                                style={{ width: `${professor.performanceScore}%` }}
-                              />
-                            </div>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-[10px] font-bold text-white drop-shadow-md">
-                                {professor.performanceScore}%
-                              </span>
-                            </div>
+                          <div className="text-xs text-muted-foreground">
+                            {professor.positiveResponses} positive / {professor.totalResponses} total
+                          </div>
+                          <div className="text-xs text-chart-5 font-medium">
+                            SA: {professor.stronglyAgreeCount} | A: {professor.agreeCount}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {professor.totalEvaluations} respondent{professor.totalEvaluations !== 1 ? 's' : ''}
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Right side: Stats */}
-                    <div className="flex-shrink-0 text-right space-y-1">
-                      <div className={`font-bold text-2xl ${getPerformanceColor(professor.performanceScore)}`}>
-                        {professor.performanceScore}%
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {professor.positiveResponses} positive / {professor.totalResponses} total
-                      </div>
-                      <div className="text-xs text-chart-5 font-medium">
-                        SA: {professor.stronglyAgreeCount} | A: {professor.agreeCount}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {professor.totalEvaluations} evaluation{professor.totalEvaluations !== 1 ? 's' : ''}
-                      </div>
-                    </div>
+                    {/* Bottom gradient line for visual effect */}
+                    <div className={`h-1 bg-gradient-to-r ${getGradientClass(index)}`} />
                   </div>
-                </div>
-
-                {/* Bottom gradient line for visual effect */}
-                <div className={`h-1 bg-gradient-to-r ${getGradientClass(index)}`} />
-              </div>
                 ))
               ) : (
                 /* Empty state for category */

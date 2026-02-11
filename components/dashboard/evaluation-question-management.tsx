@@ -17,6 +17,12 @@ import { Input } from "@/components/ui/input" // Input field component
 import { Label } from "@/components/ui/label" // Label component
 import { Textarea } from "@/components/ui/textarea" // Textarea component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select" // Dropdown component
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu" // Dropdown menu component
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table" // Table components
 import {
   Dialog,
@@ -40,10 +46,11 @@ import {
 } from "@/components/ui/alert-dialog" // Confirmation dialog components
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card" // Card components
 import { Badge } from "@/components/ui/badge" // Badge component
-import { Plus, Edit, Trash2, HelpCircle, X, Search, List, BarChart3, ArrowLeft, Download, FileText, Upload, Maximize2, Users } from "lucide-react" // Icons
+import { Plus, Edit, Trash2, HelpCircle, X, Search, List, BarChart3, ArrowLeft, Download, FileText, Upload, Maximize2, Users, MoreVertical } from "lucide-react" // Icons
 import { evaluationQuestionService, questionTypeService } from "@/lib/database" // Database functions
 import type { EvaluationQuestion, Professor } from "@/lib/types" // Type definitions
 import { useToast } from "@/hooks/use-toast" // Toast notification hook
+import { sanitizeErrorMessage } from "@/lib/utils" // Helper function para sa pag-sanitize ng error messages
 import { parseExcelQuestions, type ParsedQuestion, type ExcelQuestionParseResult } from "@/lib/excel-parser" // Excel parsing functions
 
 // STEP 2: Declare global variables para sa Google Charts
@@ -120,6 +127,13 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
   const [questionType, setQuestionType] = useState<"Likert Scale" | "text">("text") // Tipo ng tanong
   const [options, setOptions] = useState<string[]>([""]) // Mga choices
   const [isSaving, setIsSaving] = useState(false) // Kung nagse-save pa ba
+
+  // Delete All password protection state
+  const [isDeleteAllPasswordDialogOpen, setIsDeleteAllPasswordDialogOpen] = useState(false)
+  const [deleteAllPassword, setDeleteAllPassword] = useState("")
+  const [deleteAllPasswordError, setDeleteAllPasswordError] = useState("")
+  const [isDeleteAllConfirmOpen, setIsDeleteAllConfirmOpen] = useState(false)
+
   // STEP 10: Function para i-normalize ang question type (i-convert sa standard format)
   const normalizeQuestionType = (value: any): "Likert Scale" | "text" => {
     const v = String(value || "").toLowerCase().trim() // I-convert sa lowercase at i-trim
@@ -263,6 +277,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
       'C. Professionalism and Personal Qualities',
       'D. Student Support and Development',
       'E. Research',
+      'F. Comments',
       'Other'
     ]
 
@@ -380,7 +395,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
       console.error("Add question failed:", error)
       toast({
         title: "Failed to add question",
-        description: (error as any)?.message || "Please try again.",
+        description: sanitizeErrorMessage(error),
         variant: "destructive",
       })
     } finally {
@@ -445,7 +460,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
       console.error("Add & Continue failed:", error)
       toast({
         title: "Failed to add question",
-        description: (error as any)?.message || "Please try again.",
+        description: sanitizeErrorMessage(error),
         variant: "destructive",
       })
     } finally {
@@ -605,7 +620,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
       }
     })
 
-    console.log(`🔍 Checking duplicates: ${parsedQuestions.length} parsed questions against ${questions.length} existing questions`)
+
 
     parsedQuestions.forEach(parsedQuestion => {
       const normalizedNewText = normalizeQuestionText(parsedQuestion.questionText)
@@ -629,15 +644,13 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         )
 
         if (isDuplicateInImport) {
-          console.log(`⚠️ Duplicate within import: "${parsedQuestion.questionText.substring(0, 50)}..."`)
-          duplicateQuestions.push(parsedQuestion)
         } else {
           newQuestions.push(parsedQuestion)
         }
       }
     })
 
-    console.log(`✅ Duplicate check complete: ${newQuestions.length} new, ${duplicateQuestions.length} duplicates`)
+
 
     return {
       newQuestions,
@@ -708,7 +721,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
       console.error("Excel parsing error:", error)
       toast({
         title: "Failed to read Excel",
-        description: (error as Error).message || "Please check the file format and try again.",
+        description: sanitizeErrorMessage(error),
         variant: "destructive",
       })
     } finally {
@@ -737,15 +750,23 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
           const parsedQuestion = newQuestions[j]
 
           try {
-            const questionData = {
+            // Check if this is a Comments question (text type)
+            const isCommentsSection = parsedQuestion.section?.toLowerCase().includes('comment')
+            const questionType = isCommentsSection ? "text" : "Likert Scale"
+
+            const questionData: any = {
               teacherId: professor.id,
               teacherName: professor.name,
               questionText: parsedQuestion.questionText,
-              questionType: "Likert Scale" as const,
+              questionType: questionType as "Likert Scale" | "text",
               isActive: true,
-              options: ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"],
               section: parsedQuestion.section,
               weight: parsedQuestion.weight,
+            }
+
+            // Only add options for Likert Scale questions
+            if (!isCommentsSection) {
+              questionData.options = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
             }
 
             await evaluationQuestionService.create(questionData)
@@ -809,6 +830,8 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         return "Likert Scale"
       case "text":
         return "Text Response"
+      case "Comment":
+        return "Comment"
       default:
         return type
     }
@@ -903,26 +926,106 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                 </div>
               </div>
 
-              {/* Right Side: Actions */}
+              {/* Right Side: Actions - 3-dot menu */}
               <div className="flex flex-col gap-2 w-full sm:w-auto">
                 <Label className="text-xs font-medium text-muted-foreground opacity-0 pointer-events-none">
                   Actions
                 </Label>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <Button
-                      variant="destructive"
+                      variant="outline"
                       size="sm"
-                      disabled={uniqueQuestions.length === 0}
                       className="w-full sm:w-auto"
                     >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete All
+                      <MoreVertical className="h-4 w-4" />
                     </Button>
-                  </AlertDialogTrigger>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setDeleteAllPassword("")
+                        setDeleteAllPasswordError("")
+                        setIsDeleteAllPasswordDialogOpen(true)
+                      }}
+                      disabled={uniqueQuestions.length === 0}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete All Questions
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Password Dialog for Delete All */}
+                <Dialog open={isDeleteAllPasswordDialogOpen} onOpenChange={setIsDeleteAllPasswordDialogOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Trash2 className="h-5 w-5 text-destructive" />
+                        Delete All Questions
+                      </DialogTitle>
+                      <DialogDescription>
+                        This action requires administrator password to proceed.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="delete-all-password">Enter Password</Label>
+                        <Input
+                          id="delete-all-password"
+                          type="password"
+                          placeholder="Enter password..."
+                          value={deleteAllPassword}
+                          onChange={(e) => {
+                            setDeleteAllPassword(e.target.value)
+                            setDeleteAllPasswordError("")
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              if (deleteAllPassword === "LCCADMIN") {
+                                setIsDeleteAllPasswordDialogOpen(false)
+                                setIsDeleteAllConfirmOpen(true)
+                              } else {
+                                setDeleteAllPasswordError("Incorrect password. Please try again.")
+                              }
+                            }
+                          }}
+                        />
+                        {deleteAllPasswordError && (
+                          <p className="text-sm text-destructive">{deleteAllPasswordError}</p>
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setIsDeleteAllPasswordDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => {
+                          if (deleteAllPassword === "LCCADMIN") {
+                            setIsDeleteAllPasswordDialogOpen(false)
+                            setIsDeleteAllConfirmOpen(true)
+                          } else {
+                            setDeleteAllPasswordError("Incorrect password. Please try again.")
+                          }
+                        }}
+                      >
+                        Continue
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Confirmation Dialog after password */}
+                <AlertDialog open={isDeleteAllConfirmOpen} onOpenChange={setIsDeleteAllConfirmOpen}>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Delete All Questions</AlertDialogTitle>
+                      <AlertDialogTitle>Confirm Delete All Questions</AlertDialogTitle>
                       <AlertDialogDescription>
                         Are you sure you want to delete ALL {uniqueQuestions.length} evaluation questions across ALL professors?
                         <br /><br />
@@ -1023,6 +1126,8 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                 'Student Support and Development',
                 'E. Research',
                 'Research',
+                'F. Comments',
+                'Comments',
                 'Other'
               ]
 
@@ -1139,41 +1244,6 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                                   <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-1.5" />
                                   <span className="hidden sm:inline text-xs font-medium">Edit</span>
                                 </Button>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-8 sm:h-9 px-2 sm:px-3 hover:bg-destructive/10 hover:text-destructive transition-all text-xs"
-                                      title="Delete all instances of this question"
-                                      aria-label="Delete question"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-1.5" />
-                                      <span className="hidden sm:inline text-xs font-medium">Delete</span>
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent className="mx-4 max-w-[calc(100vw-2rem)]">
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Question</AlertDialogTitle>
-                                      <AlertDialogDescription className="text-sm">
-                                        Are you sure you want to delete this question: "{question.questionText}"?
-                                        <br /><br />
-                                        <strong className="text-destructive">Note:</strong> This will delete ALL instances of this question across ALL professors.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                                      <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => {
-                                          handleDeleteQuestion(question.id)
-                                        }}
-                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90 w-full sm:w-auto"
-                                      >
-                                        Delete All
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
                               </div>
                             </div>
                           </div>
@@ -1270,40 +1340,6 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                                 <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-1.5" />
                                 <span className="hidden sm:inline text-xs font-medium">Edit</span>
                               </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-8 sm:h-9 px-2 sm:px-3 hover:bg-destructive/10 hover:text-destructive transition-all text-xs"
-                                    title="Delete all instances of this question"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 sm:mr-1.5" />
-                                    <span className="hidden sm:inline text-xs font-medium">Delete</span>
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="mx-4 max-w-[calc(100vw-2rem)]">
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete Question</AlertDialogTitle>
-                                    <AlertDialogDescription className="text-sm">
-                                      Are you sure you want to delete this question: "{question.questionText}"?
-                                      <br /><br />
-                                      <strong className="text-destructive">Note:</strong> This will delete ALL instances of this question across ALL professors.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                                    <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => {
-                                        handleDeleteQuestion(question.id)
-                                      }}
-                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90 w-full sm:w-auto"
-                                    >
-                                      Delete All
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
                             </div>
                           </div>
                         </div>
@@ -1322,12 +1358,13 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
           <DialogHeader>
             <DialogTitle>Import Evaluation Questions from Excel</DialogTitle>
             <DialogDescription>
-              Upload an Excel file containing evaluation questions. The system will automatically detect questions from 5 sections:
+              Upload an Excel file containing evaluation questions. The system will automatically detect questions from 6 sections:
               <br />• A. Instructional Competence (40%)
               <br />• B. Classroom Management (20%)
               <br />• C. Professionalism and Personal Qualities (20%)
               <br />• D. Student Support and Development (10%)
               <br />• E. Research (10%)
+              <br />• F. Comments (text response)
             </DialogDescription>
           </DialogHeader>
 
@@ -1672,36 +1709,53 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
 
                 {/* Import Progress */}
                 {isImportingQuestions && (
-                  <div className="space-y-4 mb-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold">Importing Questions</h3>
+                  <div className="sticky top-0 z-10 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border-2 border-blue-200 dark:border-blue-800 rounded-xl p-6 mb-6 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                            <Upload className="w-5 h-5 text-white animate-bounce" />
+                          </div>
+                          <div className="absolute inset-0 rounded-full bg-blue-500/30 animate-ping"></div>
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-blue-900 dark:text-blue-100">
+                            Importing Questions...
+                          </h3>
+                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                            Please wait while we add questions for all professors
+                          </p>
+                        </div>
+                      </div>
                       <div className="flex gap-2">
-                        <Badge variant="secondary">
-                          {importedCount} imported
+                        <Badge variant="default" className="bg-green-600 text-white px-3 py-1 text-sm">
+                          ✓ {importedCount} imported
                         </Badge>
                         {skippedCount > 0 && (
-                          <Badge variant="outline" className="text-blue-600 border-blue-600">
-                            {skippedCount} skipped
+                          <Badge variant="outline" className="text-blue-600 border-blue-600 px-3 py-1 text-sm">
+                            ⏭ {skippedCount} skipped
                           </Badge>
                         )}
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Progress</span>
-                        <span>{importProgress}%</span>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm font-medium">
+                        <span className="text-blue-800 dark:text-blue-200">Progress</span>
+                        <span className="text-blue-900 dark:text-blue-100 font-bold text-lg">{importProgress}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-4 overflow-hidden">
                         <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          className="bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 h-4 rounded-full transition-all duration-300 relative"
                           style={{ width: `${importProgress}%` }}
-                        ></div>
+                        >
+                          <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                        </div>
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        Creating {newQuestions.length} new questions for all {professors.length} professors...
+                      <p className="text-sm text-blue-700 dark:text-blue-300 text-center">
+                        Creating <span className="font-bold">{newQuestions.length}</span> new questions for all <span className="font-bold">{professors.length}</span> professors
                         {duplicateQuestions.length > 0 && (
-                          <span className="text-blue-600 ml-2">
-                            ({duplicateQuestions.length} existing questions will be skipped)
+                          <span className="text-blue-500 ml-2">
+                            ({duplicateQuestions.length} existing will be skipped)
                           </span>
                         )}
                       </p>

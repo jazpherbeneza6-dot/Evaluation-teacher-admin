@@ -12,7 +12,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { deleteImageByDepartmentName } from '@/lib/mega-service'
 import { departmentService } from '@/lib/database'
 
 export async function POST(request: NextRequest) {
@@ -27,10 +26,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Delete image from MEGA
-    await deleteImageByDepartmentName(departmentName)
-
-    // Update department to remove image URL
+    // MEGA service removed - just update department to remove image URL
     await departmentService.update(departmentId, departmentName, undefined)
 
     return NextResponse.json({
@@ -38,7 +34,7 @@ export async function POST(request: NextRequest) {
       message: 'Image deleted successfully'
     })
   } catch (error) {
-    console.error('Error deleting department image:', error)
+    
     return NextResponse.json(
       { 
         error: 'Failed to delete image',

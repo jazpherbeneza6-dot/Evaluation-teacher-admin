@@ -24,7 +24,7 @@
 
 import { cn } from "@/lib/utils" // Utility function para sa conditional CSS classes
 import { Button } from "@/components/ui/button"
-import { Users, HelpCircle, BarChart3, GraduationCap, TrendingUp, Clock, FileBarChart, X } from "lucide-react"
+import { Users, HelpCircle, BarChart3, GraduationCap, TrendingUp, Clock, FileBarChart, X, FolderOpen } from "lucide-react"
 import {
   Sheet,
   SheetContent,
@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/sheet"
 
 // Type definition para sa mga available views
-export type ActiveView = "overview" | "professors" | "evaluation-questions" | "evaluation-results" | "students" | "evaluation-duration"
+export type ActiveView = "overview" | "professors" | "evaluation-questions" | "evaluation-results" | "students" | "evaluation-duration" | "evaluation-history"
 
 // Interface para sa props ng DashboardSidebar
 interface DashboardSidebarProps {
@@ -83,10 +83,16 @@ const sidebarItems = [
     icon: GraduationCap, // Graduation cap icon para sa students
     description: "Manage student accounts",
   },
+  {
+    id: "evaluation-history" as const, // Evaluation history
+    label: "Evaluation History",
+    icon: FolderOpen, // Folder icon para sa history
+    description: "View past evaluations",
+  },
 ]
 
 // Sidebar Content Component - para ma-reuse sa desktop at mobile
-const SidebarContent = ({ activeView, onViewChange, onItemClick }: { 
+const SidebarContent = ({ activeView, onViewChange, onItemClick }: {
   activeView: ActiveView
   onViewChange: (view: ActiveView) => void
   onItemClick?: () => void
