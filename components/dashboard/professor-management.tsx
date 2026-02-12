@@ -119,6 +119,7 @@ export function ProfessorManagement({
   // State variables para sa pag-edit ng subjects & sections
   const [isEditSubjectsDialogOpen, setIsEditSubjectsDialogOpen] = useState(false) // Para sa popup ng pag-edit ng subjects
   const [editingSubjectSections, setEditingSubjectSections] = useState<Array<{ subject: string; sectionsText: string; courseText: string }>>([]) // Subjects, sections, and course handle na ine-edit
+  const [newCourseInputs, setNewCourseInputs] = useState<Record<number, string>>({}) // Per-subject input for adding new courses
   const [isSavingSubjects, setIsSavingSubjects] = useState(false) // Loading state para sa save
 
   // State variables para sa evaluation statistics (student count by section)
@@ -993,7 +994,7 @@ export function ProfessorManagement({
         departmentName: string
         password: string
         subjects?: string[] // Array of subjects (supports multiple subjects)
-        subjectSections?: Array<{ subject: string; sections: string[] }> // Paired subjects with sections
+        subjectSections?: Array<{ subject: string; sections: string[]; course?: string }> // Paired subjects with sections and course handle
         handledSection?: string
       }> = []
 
@@ -1929,7 +1930,17 @@ export function ProfessorManagement({
                                 {ss.course && (
                                   <div className="mb-2">
                                     <span className="text-xs text-gray-500">Course: </span>
-                                    <span className="text-xs font-medium text-indigo-700">{ss.course}</span>
+                                    {ss.course.includes(',') ? (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {ss.course.split(',').map((c: string, cIdx: number) => c.trim()).filter((c: string) => c).map((c: string, cIdx: number) => (
+                                          <Badge key={cIdx} variant="outline" className="text-xs text-indigo-700 border-indigo-300">
+                                            {c}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs font-medium text-indigo-700">{ss.course}</span>
+                                    )}
                                   </div>
                                 )}
                                 {ss.sections && ss.sections.length > 0 ? (
@@ -2148,16 +2159,72 @@ export function ProfessorManagement({
                     </div>
 
                     <div className="grid gap-2">
-                      <Label className="text-sm text-gray-600">Handled Course</Label>
-                      <Input
-                        value={ss.courseText}
-                        onChange={(e) => {
-                          setEditingSubjectSections(prev => prev.map((item, i) =>
-                            i === idx ? { ...item, courseText: e.target.value } : item
-                          ))
-                        }}
-                        placeholder="e.g., BS Accounting Information System"
-                      />
+                      <Label className="text-sm text-gray-600">Handled Courses</Label>
+                      {/* Display existing courses as removable tags */}
+                      {ss.courseText && ss.courseText.trim() && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c).map((course: string, cIdx: number) => (
+                            <Badge key={cIdx} variant="outline" className="text-xs text-indigo-700 border-indigo-300 pr-1 flex items-center gap-1">
+                              {course}
+                              <button
+                                type="button"
+                                title="Remove course"
+                                className="ml-1 hover:bg-indigo-100 rounded-full p-0.5"
+                                onClick={() => {
+                                  const courses = ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c)
+                                  const updated = courses.filter((_: string, i: number) => i !== cIdx).join(', ')
+                                  setEditingSubjectSections(prev => prev.map((item, i) =>
+                                    i === idx ? { ...item, courseText: updated } : item
+                                  ))
+                                }}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      {/* Input + Add button for new course */}
+                      <div className="flex gap-2">
+                        <Input
+                          value={newCourseInputs[idx] || ''}
+                          onChange={(e) => setNewCourseInputs(prev => ({ ...prev, [idx]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && (newCourseInputs[idx] || '').trim()) {
+                              e.preventDefault()
+                              const newCourse = (newCourseInputs[idx] || '').trim()
+                              const existing = ss.courseText ? ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c) : []
+                              const updated = [...existing, newCourse].join(', ')
+                              setEditingSubjectSections(prev => prev.map((item, i) =>
+                                i === idx ? { ...item, courseText: updated } : item
+                              ))
+                              setNewCourseInputs(prev => ({ ...prev, [idx]: '' }))
+                            }
+                          }}
+                          placeholder="e.g., BS Accounting Information System"
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          disabled={!(newCourseInputs[idx] || '').trim()}
+                          onClick={() => {
+                            const newCourse = (newCourseInputs[idx] || '').trim()
+                            if (!newCourse) return
+                            const existing = ss.courseText ? ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c) : []
+                            const updated = [...existing, newCourse].join(', ')
+                            setEditingSubjectSections(prev => prev.map((item, i) =>
+                              i === idx ? { ...item, courseText: updated } : item
+                            ))
+                            setNewCourseInputs(prev => ({ ...prev, [idx]: '' }))
+                          }}
+                        >
+                          <PlusCircle className="h-4 w-4 mr-1" />
+                          Add
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="grid gap-2">
@@ -2240,17 +2307,73 @@ export function ProfessorManagement({
 
                 <div>
                   <Label className="text-xs text-gray-500 mb-2 block">
-                    Handled Course
+                    Handled Courses
                   </Label>
-                  <Input
-                    value={ss.courseText}
-                    onChange={(e) => {
-                      setEditingSubjectSections(prev => prev.map((item, i) =>
-                        i === idx ? { ...item, courseText: e.target.value } : item
-                      ))
-                    }}
-                    placeholder="e.g., BS Accounting Information System"
-                  />
+                  {/* Display existing courses as removable tags */}
+                  {ss.courseText && ss.courseText.trim() && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c).map((course: string, cIdx: number) => (
+                        <Badge key={cIdx} variant="outline" className="text-xs text-indigo-700 border-indigo-300 pr-1 flex items-center gap-1">
+                          {course}
+                          <button
+                            type="button"
+                            title="Remove course"
+                            className="ml-1 hover:bg-indigo-100 rounded-full p-0.5"
+                            onClick={() => {
+                              const courses = ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c)
+                              const updated = courses.filter((_: string, i: number) => i !== cIdx).join(', ')
+                              setEditingSubjectSections(prev => prev.map((item, i) =>
+                                i === idx ? { ...item, courseText: updated } : item
+                              ))
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {/* Input + Add button for new course */}
+                  <div className="flex gap-2">
+                    <Input
+                      value={newCourseInputs[idx] || ''}
+                      onChange={(e) => setNewCourseInputs(prev => ({ ...prev, [idx]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (newCourseInputs[idx] || '').trim()) {
+                          e.preventDefault()
+                          const newCourse = (newCourseInputs[idx] || '').trim()
+                          const existing = ss.courseText ? ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c) : []
+                          const updated = [...existing, newCourse].join(', ')
+                          setEditingSubjectSections(prev => prev.map((item, i) =>
+                            i === idx ? { ...item, courseText: updated } : item
+                          ))
+                          setNewCourseInputs(prev => ({ ...prev, [idx]: '' }))
+                        }
+                      }}
+                      placeholder="e.g., BS Accounting Information System"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={!(newCourseInputs[idx] || '').trim()}
+                      onClick={() => {
+                        const newCourse = (newCourseInputs[idx] || '').trim()
+                        if (!newCourse) return
+                        const existing = ss.courseText ? ss.courseText.split(',').map((c: string) => c.trim()).filter((c: string) => c) : []
+                        const updated = [...existing, newCourse].join(', ')
+                        setEditingSubjectSections(prev => prev.map((item, i) =>
+                          i === idx ? { ...item, courseText: updated } : item
+                        ))
+                        setNewCourseInputs(prev => ({ ...prev, [idx]: '' }))
+                      }}
+                    >
+                      <PlusCircle className="h-4 w-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
                 </div>
 
                 <div>
@@ -2538,21 +2661,34 @@ export function ProfessorManagement({
                                 {/* Display course handle */}
                                 {professor.subjectSections && professor.subjectSections.length > 0 ? (
                                   <div className="flex flex-wrap gap-1">
-                                    {professor.subjectSections.slice(0, 2).map((ss, idx) => (
-                                      ss.course ? (
-                                        <Badge key={idx} variant="outline" className="text-xs text-indigo-700 border-indigo-300">
-                                          {ss.course}
-                                        </Badge>
-                                      ) : null
-                                    )).filter(Boolean)}
-                                    {professor.subjectSections.filter(ss => ss.course).length > 2 && (
-                                      <Badge variant="secondary" className="text-xs">
-                                        +{professor.subjectSections.filter(ss => ss.course).length - 2} more
-                                      </Badge>
-                                    )}
-                                    {professor.subjectSections.every(ss => !ss.course) && (
-                                      <span className="text-muted-foreground text-sm">-</span>
-                                    )}
+                                    {(() => {
+                                      // Collect all individual courses from all subjects (split comma-separated)
+                                      const allCourses: string[] = []
+                                      professor.subjectSections.forEach((ss: any) => {
+                                        if (ss.course) {
+                                          ss.course.split(',').map((c: string) => c.trim()).filter((c: string) => c).forEach((c: string) => {
+                                            if (!allCourses.includes(c)) allCourses.push(c)
+                                          })
+                                        }
+                                      })
+                                      if (allCourses.length === 0) {
+                                        return <span className="text-muted-foreground text-sm">-</span>
+                                      }
+                                      return (
+                                        <>
+                                          {allCourses.slice(0, 2).map((c, idx) => (
+                                            <Badge key={idx} variant="outline" className="text-xs text-indigo-700 border-indigo-300">
+                                              {c}
+                                            </Badge>
+                                          ))}
+                                          {allCourses.length > 2 && (
+                                            <Badge variant="secondary" className="text-xs">
+                                              +{allCourses.length - 2} more
+                                            </Badge>
+                                          )}
+                                        </>
+                                      )
+                                    })()}
                                   </div>
                                 ) : (
                                   <span className="text-muted-foreground text-sm">-</span>
