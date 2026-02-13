@@ -1544,20 +1544,6 @@ export function ProfessorManagement({
                             <Edit className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 sm:mr-2" />
                             Edit
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              if (window.confirm(`Are you sure you want to delete ${professor.name}? This will permanently remove all associated data.`)) {
-                                handleDeleteProfessor(professor.id)
-                              }
-                            }}
-                            className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400 transition-all duration-200 text-[11px] sm:text-xs md:text-sm min-h-[36px] sm:min-h-[40px]"
-                          >
-                            <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 md:h-4 md:w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">Delete</span>
-                            <span className="sm:hidden">Del</span>
-                          </Button>
 
                         </div>
                       </CardContent>
@@ -1874,7 +1860,7 @@ export function ProfessorManagement({
                   <BookOpen className="h-5 w-5 text-indigo-500 mt-0.5" />
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-medium text-gray-700">Subjects Handled ,Course Handled & Handled Sections</p>
+                      <p className="text-sm font-medium text-gray-700">Subjects Handled, Course Handled, Handled Year & Sections</p>
                       <Button
                         variant="ghost"
                         size="sm"

@@ -837,6 +837,15 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
     }
   }
 
+  // Helper to normalize section display names
+  const getSectionDisplayName = (section: string): string => {
+    const lower = section.toLowerCase().trim()
+    if (lower === 'verbal interpretation' || lower === 'f. verbal interpretation') {
+      return 'Comments'
+    }
+    return section
+  }
+
   const safeQuestions = questions || []
   const safeProfessors = professors || []
 
@@ -893,7 +902,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                     <SelectItem value="all">All Sections</SelectItem>
                     {Array.from(questionsBySection.entries()).map(([section, questions]) => (
                       <SelectItem key={section} value={section}>
-                        {section} ({questions.length})
+                        {getSectionDisplayName(section)} ({questions.length})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1128,6 +1137,8 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                 'Research',
                 'F. Comments',
                 'Comments',
+                'verbal interpretation',
+                'F. verbal interpretation',
                 'Other'
               ]
 
@@ -1163,7 +1174,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                 <div className="space-y-6 sm:space-y-8">
                   {sortedDisplaySections.map(([section, sectionQuestions]) => (
                     <div key={section} className="space-y-3 sm:space-y-4">
-                      <h4 className="text-lg sm:text-xl font-bold text-foreground border-b pb-2 px-1 sm:px-0">{section}</h4>
+                      <h4 className="text-lg sm:text-xl font-bold text-foreground border-b pb-2 px-1 sm:px-0">{getSectionDisplayName(section)}</h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
                         {sectionQuestions.map((question, index) => (
                           <div
@@ -1175,27 +1186,6 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                                 : 'from-card to-purple-500/5 hover:border-purple-500/40'
                               }`}
                           >
-                            {/* Card Header */}
-                            <div className="px-4 sm:px-5 py-3 sm:py-4 border-b bg-gradient-to-r from-transparent to-muted/30 flex-shrink-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <Badge
-                                  variant="secondary"
-                                  className={`text-xs font-semibold px-2 sm:px-3 py-1 ${index % 3 === 0
-                                    ? 'bg-primary/15 text-primary border-primary/30'
-                                    : index % 3 === 1
-                                      ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                                      : 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30'
-                                    }`}
-                                >
-                                  {getQuestionTypeLabel(question.questionType)}
-                                </Badge>
-                                {question.weight && (
-                                  <span className="text-xs font-bold text-muted-foreground bg-muted/50 px-2 py-1 rounded text-nowrap">
-                                    {question.weight}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
 
                             {/* Card Content */}
                             <div className="p-4 sm:p-5 flex-1 flex flex-col">
@@ -1260,7 +1250,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
               <div className="space-y-6 sm:space-y-8">
                 {displaySections.map(([section, sectionQuestions]) => (
                   <div key={section} className="space-y-3 sm:space-y-4">
-                    <h4 className="text-lg sm:text-xl font-bold text-foreground border-b pb-2 px-1 sm:px-0">{section}</h4>
+                    <h4 className="text-lg sm:text-xl font-bold text-foreground border-b pb-2 px-1 sm:px-0">{getSectionDisplayName(section)}</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 items-stretch">
                       {sectionQuestions.map((question, index) => (
                         <div
@@ -1272,27 +1262,6 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                               : 'from-card to-purple-500/5 hover:border-purple-500/40'
                             }`}
                         >
-                          {/* Card Header */}
-                          <div className="px-4 sm:px-5 py-3 sm:py-4 border-b bg-gradient-to-r from-transparent to-muted/30 flex-shrink-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <Badge
-                                variant="secondary"
-                                className={`text-xs font-semibold px-2 sm:px-3 py-1 ${index % 3 === 0
-                                  ? 'bg-primary/15 text-primary border-primary/30'
-                                  : index % 3 === 1
-                                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                                    : 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30'
-                                  }`}
-                              >
-                                {getQuestionTypeLabel(question.questionType)}
-                              </Badge>
-                              {question.weight && (
-                                <span className="text-xs font-bold text-muted-foreground bg-muted/50 px-2 py-1 rounded text-nowrap">
-                                  {question.weight}
-                                </span>
-                              )}
-                            </div>
-                          </div>
 
                           {/* Card Content */}
                           <div className="p-4 sm:p-5 flex-1 flex flex-col">
