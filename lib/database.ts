@@ -2207,3 +2207,105 @@ export const evaluationDeadlineService = {
     }
   },
 }
+
+// Admin settings and profile operations
+export const adminSettingsService = {
+  // Get question password (default: LCCADMIN)
+  async getQuestionPassword(): Promise<string> {
+    try {
+      const docRef = doc(db, "settings", "admin_Question-password")
+      const docSnap = await getDoc(docRef)
+      if (docSnap.exists()) {
+        const data = docSnap.data()
+        // We use the exact field name "Question-password" from the document
+        return data["Question-password"] || data.password || "LCCADMIN"
+      }
+      return "LCCADMIN"
+    } catch (error) {
+      console.error("Error fetching question password:", error)
+      return "LCCADMIN"
+    }
+  },
+
+  // Get admin login password (default: admin123)
+  async getAdminPassword(): Promise<string> {
+    try {
+      const docRef = doc(db, "settings", "admin_password")
+      const docSnap = await getDoc(docRef)
+      if (docSnap.exists()) {
+        return docSnap.data().password || "admin123"
+      }
+      return "admin123"
+    } catch (error) {
+      console.error("Error fetching admin login password:", error)
+      return "admin123"
+    }
+  },
+
+  // Update admin login password
+  async updateAdminPassword(newPassword: string): Promise<void> {
+    try {
+      const docRef = doc(db, "settings", "admin_password")
+      await setDoc(docRef, { password: newPassword, updatedAt: Timestamp.now() }, { merge: true })
+    } catch (error) {
+      console.error("Error updating admin login password:", error)
+      throw error
+    }
+  },
+
+  // Update question password
+  async updateQuestionPassword(newPassword: string): Promise<void> {
+    try {
+      const docRef = doc(db, "settings", "admin_Question-password")
+      await setDoc(docRef, { 
+        "Question-password": newPassword, 
+        updatedAt: Timestamp.now() 
+      }, { merge: true })
+    } catch (error) {
+      console.error("Error updating question password:", error)
+      throw error
+    }
+  },
+
+  // Get admin profile from Firestore
+  async getAdminProfile(): Promise<{ username: string } | null> {
+    try {
+      const docRef = doc(db, "settings", "admin_Username")
+      const docSnap = await getDoc(docRef)
+      if (docSnap.exists()) {
+        const data = docSnap.data()
+        return {
+          username: data.username || "admin"
+        }
+      }
+      return null
+    } catch (error) {
+      console.error("Error fetching admin profile:", error)
+      return null
+    }
+  },
+
+  // Update admin profile in Firestore (removes legacy fields like displayName and email)
+  async updateAdminProfile(data: { username: string }): Promise<void> {
+    try {
+      const docRef = doc(db, "settings", "admin_Username")
+      // We replace the document to ensure old fields like displayName and email are removed
+      await setDoc(docRef, {
+        username: data.username,
+        updatedAt: Timestamp.now()
+      })
+    } catch (error) {
+      console.error("Error updating admin profile:", error)
+      throw error
+    }
+  },
+
+  // Verify question password
+  async verifyQuestionPassword(password: string): Promise<boolean> {
+    const current = await this.getQuestionPassword()
+    // Trim whitespace to handle accidental spaces in DB (as seen in screenshot)
+    return current.trim() === password.trim()
+  }
+}
+
+

@@ -37,6 +37,7 @@ import {
 } from "@/lib/excel-parser"
 import { StudentManagement } from "./student-management"
 import { EvaluationHistoryManagement } from "./evaluation-history-management"
+import { SettingsManagement } from "./settings-management"
 import type { EvaluationStats, EvaluationQuestion, Professor, Department } from "@/lib/types"
 
 export function AdminDashboard() {
@@ -46,7 +47,7 @@ export function AdminDashboard() {
     if (typeof window !== 'undefined') {
       const savedView = localStorage.getItem('adminDashboardActiveView') as ActiveView | null
       // Validate that saved view is a valid ActiveView
-      const validViews: ActiveView[] = ["overview", "professors", "evaluation-questions", "evaluation-duration", "evaluation-results", "students"]
+      const validViews: ActiveView[] = ["overview", "professors", "evaluation-questions", "evaluation-duration", "evaluation-results", "students", "evaluation-history", "settings"]
       if (savedView && validViews.includes(savedView)) {
         return savedView
       }
@@ -180,6 +181,8 @@ export function AdminDashboard() {
         return <StudentManagement onRefresh={refreshData} />
       case "evaluation-history":
         return <EvaluationHistoryManagement questions={evaluationQuestions} professors={professors} />
+      case "settings":
+        return <SettingsManagement />
       default:
         return <DashboardOverview stats={stats} departments={departments} professors={professors} totalEvaluations={totalEvaluations} totalStudents={totalStudents} completedStudents={completedStudents} />
     }

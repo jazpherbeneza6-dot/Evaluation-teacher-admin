@@ -109,6 +109,9 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   // List of students - main data displayed in table
   const [students, setStudents] = useState<Student[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // States for evaluation progress tracking (real-time)
+  const [professors, setProfessors] = useState<Professor[]>([])
+  const [evaluationResults, setEvaluationResults] = useState<EvaluationResult[]>([])
   const unsubscribeRef = useRef<(() => void) | null>(null)
   const isListenerActiveRef = useRef<boolean>(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -116,7 +119,91 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   const [selectedCourse, setSelectedCourse] = useState<string>("all")
   const [selectedYearLevel, setSelectedYearLevel] = useState<string>("all")
   const [selectedAccountStatus, setSelectedAccountStatus] = useState<string>("all")
+  const [selectedEvalProgress, setSelectedEvalProgress] = useState<string>("all")
+  const [selectedStatus, setSelectedStatus] = useState<string>("all")
   const [currentPage, setCurrentPage] = useState(1)
+  // Real-time listeners for professors and evaluation results (for Eval Progress feature)
+  useEffect(() => {
+    // Set up professors listener
+    const profUnsubscribe = professorService.onProfessorsChange((profsData) => {
+      setProfessors(profsData as Professor[])
+    })
+    professorsUnsubscribeRef.current = profUnsubscribe
+
+    // Set up evaluation results listener
+    const evalUnsubscribe = evaluationResultsService.onEvaluationResultsChange((results) => {
+      setEvaluationResults(results)
+    })
+    evalResultsUnsubscribeRef.current = evalUnsubscribe
+
+    return () => {
+      if (professorsUnsubscribeRef.current) {
+        professorsUnsubscribeRef.current()
+        professorsUnsubscribeRef.current = null
+      }
+      if (evalResultsUnsubscribeRef.current) {
+        evalResultsUnsubscribeRef.current()
+        evalResultsUnsubscribeRef.current = null
+      }
+    }
+  }, [])
+
+  // Helper function to calculate evaluation progress for a student
+  const getEvaluationProgressForStudent = useMemo(() => {
+    return (student: Student): EvaluationProgressItem[] => {
+      const progressItems: EvaluationProgressItem[] = []
+
+      // Get student's enrolled subjects
+      const studentSubjects = student.subjects && student.subjects.length > 0
+        ? student.subjects
+        : student.subject
+          ? [student.subject]
+          : []
+
+      if (studentSubjects.length === 0) return progressItems
+
+      const studentSection = student.section
+
+      // Find professors who teach student's enrolled subjects AND handle student's section
+      professors.forEach((prof) => {
+        if (prof.status === 'resigned' || prof.status === 'inactive') return
+
+        const profSubjectSections = prof.subjectSections || []
+
+        profSubjectSections.forEach((ss) => {
+          // Check if professor teaches a subject the student is enrolled in
+          const subjectMatch = studentSubjects.some(
+            (s) => s.toLowerCase().trim() === ss.subject.toLowerCase().trim()
+          )
+
+          // Check if professor handles the student's section for this subject
+          const sectionMatch = ss.sections.some(
+            (sec) => sec.toLowerCase().trim() === studentSection?.toLowerCase().trim()
+          )
+
+          if (subjectMatch && sectionMatch) {
+            // Check if this student has already evaluated this professor
+            const hasEvaluated = evaluationResults.some((er) => {
+              const emailMatch = er.studentEmail?.toLowerCase() === student.email?.toLowerCase()
+              const profMatch = er.professorId === prof.id
+              const isComplete = er.isComplete || er.evaluationStatus === 'submitted'
+              return emailMatch && profMatch && isComplete
+            })
+
+            progressItems.push({
+              subject: ss.subject,
+              professorId: prof.id,
+              professorName: prof.name,
+              isComplete: hasEvaluated
+            })
+          }
+        })
+      })
+
+      return progressItems
+    }
+  }, [professors, evaluationResults])
+
   const studentsPerPage = 10
 
   const filteredStudents = useMemo(() => {
@@ -137,9 +224,29 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
       filtered = filtered.filter((s) => s.yearLevel === selectedYearLevel)
     }
 
+    // Filter by student status (Regular, Irregular, etc.)
+    if (selectedStatus !== "all") {
+      filtered = filtered.filter((s) => (s.status || "Regular") === selectedStatus)
+    }
+
     // Filter by account status
     if (selectedAccountStatus !== "all") {
       filtered = filtered.filter((s) => (s.accountStatus || "active") === selectedAccountStatus)
+    }
+
+    // Filter by evaluation progress
+    if (selectedEvalProgress !== "all") {
+      filtered = filtered.filter((s) => {
+        const progress = getEvaluationProgressForStudent(s)
+        const isComplete = progress.length > 0 && progress.every((p) => p.isComplete)
+        
+        if (selectedEvalProgress === "completed") {
+          return isComplete
+        } else if (selectedEvalProgress === "pending") {
+          return !isComplete
+        }
+        return true
+      })
     }
 
     // Filter by search term
@@ -165,7 +272,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     }
 
     return filtered
-  }, [students, searchTerm, selectedSection, selectedCourse, selectedYearLevel, selectedAccountStatus])
+  }, [students, searchTerm, selectedSection, selectedCourse, selectedYearLevel, selectedAccountStatus, selectedEvalProgress, selectedStatus, getEvaluationProgressForStudent])
 
   // Pagination calculations
   const totalPages = Math.ceil(filteredStudents.length / studentsPerPage)
@@ -178,7 +285,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, selectedSection, selectedCourse, selectedYearLevel, selectedAccountStatus])
+  }, [searchTerm, selectedSection, selectedCourse, selectedYearLevel, selectedAccountStatus, selectedEvalProgress, selectedStatus])
 
   // Get unique sections and year levels for filters
   const uniqueSections = useMemo(() => {
@@ -196,6 +303,12 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     return Array.from(yearLevels).sort()
   }, [students])
 
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set(students.map(s => s.status).filter(Boolean).map(s => s || "Regular"))
+    // Ensure "Regular" and "Irregular" are there if they exist in data, but unique is enough
+    return Array.from(statuses).sort()
+  }, [students])
+
   // States for add/edit dialogs
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -209,9 +322,6 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   const [duplicateStudents, setDuplicateStudents] = useState<ParsedStudent[]>([]) // Duplicate students
   const [editingSubjects, setEditingSubjects] = useState<string[]>(['']) // For dynamic subject editing
 
-  // States for evaluation progress tracking (real-time)
-  const [professors, setProfessors] = useState<Professor[]>([])
-  const [evaluationResults, setEvaluationResults] = useState<EvaluationResult[]>([])
   const [isEvalProgressDialogOpen, setIsEvalProgressDialogOpen] = useState(false)
   const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<Student | null>(null)
   const evalResultsUnsubscribeRef = useRef<(() => void) | null>(null)
@@ -380,87 +490,6 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     }
   }, [])
 
-  // Real-time listeners for professors and evaluation results (for Eval Progress feature)
-  useEffect(() => {
-    // Set up professors listener
-    const profUnsubscribe = professorService.onProfessorsChange((profsData) => {
-      setProfessors(profsData as Professor[])
-    })
-    professorsUnsubscribeRef.current = profUnsubscribe
-
-    // Set up evaluation results listener
-    const evalUnsubscribe = evaluationResultsService.onEvaluationResultsChange((results) => {
-      setEvaluationResults(results)
-    })
-    evalResultsUnsubscribeRef.current = evalUnsubscribe
-
-    return () => {
-      if (professorsUnsubscribeRef.current) {
-        professorsUnsubscribeRef.current()
-        professorsUnsubscribeRef.current = null
-      }
-      if (evalResultsUnsubscribeRef.current) {
-        evalResultsUnsubscribeRef.current()
-        evalResultsUnsubscribeRef.current = null
-      }
-    }
-  }, [])
-
-  // Helper function to calculate evaluation progress for a student
-  const getEvaluationProgressForStudent = useMemo(() => {
-    return (student: Student): EvaluationProgressItem[] => {
-      const progressItems: EvaluationProgressItem[] = []
-
-      // Get student's enrolled subjects
-      const studentSubjects = student.subjects && student.subjects.length > 0
-        ? student.subjects
-        : student.subject
-          ? [student.subject]
-          : []
-
-      if (studentSubjects.length === 0) return progressItems
-
-      const studentSection = student.section
-
-      // Find professors who teach student's enrolled subjects AND handle student's section
-      professors.forEach((prof) => {
-        if (prof.status === 'resigned' || prof.status === 'inactive') return
-
-        const profSubjectSections = prof.subjectSections || []
-
-        profSubjectSections.forEach((ss) => {
-          // Check if professor teaches a subject the student is enrolled in
-          const subjectMatch = studentSubjects.some(
-            (s) => s.toLowerCase().trim() === ss.subject.toLowerCase().trim()
-          )
-
-          // Check if professor handles the student's section for this subject
-          const sectionMatch = ss.sections.some(
-            (sec) => sec.toLowerCase().trim() === studentSection?.toLowerCase().trim()
-          )
-
-          if (subjectMatch && sectionMatch) {
-            // Check if this student has already evaluated this professor
-            const hasEvaluated = evaluationResults.some((er) => {
-              const emailMatch = er.studentEmail?.toLowerCase() === student.email?.toLowerCase()
-              const profMatch = er.professorId === prof.id
-              const isComplete = er.isComplete || er.evaluationStatus === 'submitted'
-              return emailMatch && profMatch && isComplete
-            })
-
-            progressItems.push({
-              subject: ss.subject,
-              professorId: prof.id,
-              professorName: prof.name,
-              isComplete: hasEvaluated
-            })
-          }
-        })
-      })
-
-      return progressItems
-    }
-  }, [professors, evaluationResults])
 
   // FUNCTION PARA SA PAG-IMPORT NG STUDENTS MULA SA EXCEL
 
@@ -1360,114 +1389,151 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
 
       <Card className="w-full">
         <div className="pt-1 w-full p-6">
-          <div className="pb-4 border-b border-border mb-6">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <div>
-                <div className="text-lg font-medium">Students ({filteredStudents.length})</div>
-                <p className="text-sm text-muted-foreground">Manage student accounts and evaluation access</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-end gap-4 overflow-x-auto">
-              <div className="flex-1 min-w-[200px]">
-                <label className="text-xs font-medium text-muted-foreground px-2 mb-1 block">Search</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="pb-8 border-b border-border/60 mb-8">
+            <div className="flex flex-col items-center gap-6 mb-8">
+              {/* Search Bar (Centered) */}
+              <div className="w-full md:w-[600px]">
+                <div className="relative group/search">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within/search:text-primary transition-colors" />
                   <Input
-                    placeholder="Search by name, email, course..."
+                    placeholder="Search by student, ID, or course..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 pr-10 rounded-full"
+                    className="pl-12 pr-12 rounded-xl h-12 text-sm border-muted-foreground/20 focus-visible:ring-primary/20 bg-background shadow-sm hover:border-muted-foreground/40 transition-all text-center"
                   />
                   {searchTerm && (
                     <button
                       type="button"
                       onClick={() => setSearchTerm("")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-accent"
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-accent transition-all text-muted-foreground hover:text-foreground"
                       aria-label="Clear search"
                     >
-                      <X className="h-4 w-4 text-muted-foreground" />
+                      <X className="h-4 w-4" />
                     </button>
                   )}
                 </div>
               </div>
-              <div className="w-[150px]">
-                <label className="text-xs font-medium text-muted-foreground px-2 mb-1 block">Section</label>
-                <Select value={selectedSection} onValueChange={setSelectedSection}>
-                  <SelectTrigger className="rounded-full">
-                    <SelectValue placeholder="All Sections" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sections</SelectItem>
-                    {uniqueSections.map((section) => (
-                      <SelectItem key={section} value={section}>
-                        {section}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            </div>
+            
+            <div className="flex flex-col gap-5">
+              {/* Row 2: Select Filters (Centered) */}
+              <div className="flex flex-wrap items-end justify-center gap-3 overflow-visible w-full pb-2">
+                <div className="w-full sm:w-[130px]">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Section</Label>
+                  <Select value={selectedSection} onValueChange={setSelectedSection}>
+                    <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
+                      <SelectValue placeholder="All Sections" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all">All Sections</SelectItem>
+                      {uniqueSections.map((section) => (
+                        <SelectItem key={section} value={section} className="rounded-lg">
+                          {section}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-full sm:w-[180px]">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Course</Label>
+                  <Select value={selectedCourse} onValueChange={setSelectedCourse}>
+                    <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
+                      <SelectValue placeholder="All Courses" />
+                    </SelectTrigger>
+                    <SelectContent className="max-w-[350px] rounded-xl">
+                      <SelectItem value="all">All Courses</SelectItem>
+                      {uniqueCourses.map((course) => (
+                        <SelectItem key={course} value={course} className="rounded-lg">
+                          <span className="block truncate max-w-[320px]">{course}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-full sm:w-[135px]">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Year Level</Label>
+                  <Select value={selectedYearLevel} onValueChange={setSelectedYearLevel}>
+                    <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
+                      <SelectValue placeholder="All Levels" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all">All Levels</SelectItem>
+                      {uniqueYearLevels.map((yearLevel) => (
+                        <SelectItem key={yearLevel} value={yearLevel} className="rounded-lg">
+                          {yearLevel}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-full sm:w-[140px]">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Eval Progress</Label>
+                  <Select value={selectedEvalProgress} onValueChange={setSelectedEvalProgress}>
+                    <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
+                      <SelectValue placeholder="All Progress" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all">All Progress</SelectItem>
+                      <SelectItem value="completed" className="rounded-lg">Completed</SelectItem>
+                      <SelectItem value="pending" className="rounded-lg">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-full sm:w-[130px]">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Type</Label>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all">All Status</SelectItem>
+                      {uniqueStatuses.map((status) => (
+                        <SelectItem key={status} value={status} className="rounded-lg">
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="w-full sm:w-[130px]">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Account</Label>
+                  <Select value={selectedAccountStatus} onValueChange={setSelectedAccountStatus}>
+                    <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
+                      <SelectValue placeholder="All Account" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="all" className="rounded-lg">All Status</SelectItem>
+                      <SelectItem value="active" className="rounded-lg">Active</SelectItem>
+                      <SelectItem value="inactive" className="rounded-lg">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {(selectedSection !== "all" || selectedCourse !== "all" || selectedYearLevel !== "all" || selectedEvalProgress !== "all" || selectedStatus !== "all" || selectedAccountStatus !== "all" || searchTerm) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedSection("all")
+                      setSelectedCourse("all")
+                      setSelectedYearLevel("all")
+                      setSelectedEvalProgress("all")
+                      setSelectedStatus("all")
+                      setSelectedAccountStatus("all")
+                      setSearchTerm("")
+                    }}
+                    className="h-11 px-4 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all group rounded-xl"
+                  >
+                    <X className="h-4 w-4 mr-2 group-hover:rotate-90 transition-transform" />
+                    Reset
+                  </Button>
+                )}
               </div>
-              <div className="w-[200px] min-w-[180px] max-w-[250px]">
-                <label className="text-xs font-medium text-muted-foreground px-2 mb-1 block">Course</label>
-                <Select value={selectedCourse} onValueChange={setSelectedCourse}>
-                  <SelectTrigger className="rounded-full w-full">
-                    <SelectValue placeholder="All Courses" />
-                  </SelectTrigger>
-                  <SelectContent className="max-w-[350px]">
-                    <SelectItem value="all">All Courses</SelectItem>
-                    {uniqueCourses.map((course) => (
-                      <SelectItem key={course} value={course}>
-                        <span className="block truncate max-w-[320px]">{course}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-[150px]">
-                <label className="text-xs font-medium text-muted-foreground px-2 mb-1 block">Year Level</label>
-                <Select value={selectedYearLevel} onValueChange={setSelectedYearLevel}>
-                  <SelectTrigger className="rounded-full">
-                    <SelectValue placeholder="All Year Levels" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Year Levels</SelectItem>
-                    {uniqueYearLevels.map((yearLevel) => (
-                      <SelectItem key={yearLevel} value={yearLevel}>
-                        {yearLevel}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-[130px]">
-                <label className="text-xs font-medium text-muted-foreground px-2 mb-1 block">Account</label>
-                <Select value={selectedAccountStatus} onValueChange={setSelectedAccountStatus}>
-                  <SelectTrigger className="rounded-full">
-                    <SelectValue placeholder="All Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {(selectedSection !== "all" || selectedCourse !== "all" || selectedYearLevel !== "all" || selectedAccountStatus !== "all" || searchTerm) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedSection("all")
-                    setSelectedCourse("all")
-                    setSelectedYearLevel("all")
-                    setSelectedAccountStatus("all")
-                    setSearchTerm("")
-                  }}
-                  className="rounded-full"
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  Clear Filters
-                </Button>
-              )}
             </div>
           </div>
           <div className="w-full">

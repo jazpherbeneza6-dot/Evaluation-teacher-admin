@@ -5,7 +5,6 @@ import type React from "react"
 
 // Mga hook at utilities
 import { useState } from "react"
-import { signInWithEmailAndPassword } from "firebase/auth"
 import { auth } from "@/lib/firebase"
 
 // UI components mula sa proyekto
@@ -13,7 +12,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mail, Lock, Eye, Loader2 } from "lucide-react"
+import { User, Lock, Eye, Loader2 } from "lucide-react"
+import { adminSettingsService } from "@/lib/database"
 
 // Ang pangunahing component na nagre-render ng login form
 export function LoginForm() {
@@ -41,55 +41,38 @@ export function LoginForm() {
     setIsLoading(true) // I-set ang loading state
 
     try {
-      // Shortcut: support para sa default admin credentials
-      // Kung `admin` at `admin123` ang ipinasok, itatabi sa localStorage
-      // at ire-reload ang page para ma-trigger ang authenticated state
-      if (email === "admin" && password === "admin123") {
-        // Simulate successful authentication para sa default admin
+      // Fetch dynamic admin credentials from Firestore
+      const [adminProfile, adminPassword] = await Promise.all([
+        adminSettingsService.getAdminProfile(),
+        adminSettingsService.getAdminPassword()
+      ])
+
+      const storedUsername = adminProfile?.username || "admin"
+      const storedPassword = adminPassword || "admin123"
+
+      // Check against dynamic credentials (allows username or email)
+      // If the database has "lala234", then only "lala234" (and email if exists) will work.
+      const isCorrectUsername = email === storedUsername;
+      const isCorrectPassword = password === storedPassword;
+
+      if (isCorrectUsername && isCorrectPassword) {
+        // Sign in anonymously to satisfy Firestore security rules
+        const { signInAnonymously } = await import("firebase/auth")
+        await signInAnonymously(auth)
+        
+        // Simulate successful authentication para sa admin
         localStorage.setItem("defaultAdmin", "true")
         window.location.reload() // I-reload ang page para mag-update ang auth UI
         return
       }
 
-      // Gumagamit ng Firebase Auth function para mag-sign in gamit ang email at password
-      await signInWithEmailAndPassword(auth, email, password)
-      // Kapag success, hindi na kailangang manual na i-reload ang page
-      // dahil ang auth state listener ng app ang magpapalit ng view
+      // If credentials don't match Firestore
+      setError("Invalid username or password.")
+      setIsLoading(false)
     } catch (error: any) {
       // Kung may error mula sa Firebase, i-map ang mga error code
-      // sa mas user-friendly na mensahe bago i-display
-      const errorCode = (error as { code?: string }).code
-      let errorMessage = "Failed to sign in"
-
-      switch (errorCode) {
-        case "auth/invalid-credential":
-          // Mali ang credential format o hindi valid
-          errorMessage = "Invalid email or password. Please check your credentials."
-          break
-        case "auth/user-not-found":
-          // Walang account na tumutugma sa email
-          errorMessage = "No account found with this email."
-          break
-        case "auth/wrong-password":
-          // Password ay hindi tumutugma
-          errorMessage = "Incorrect password."
-          break
-        case "auth/invalid-email":
-          // Hindi valid ang email format
-          errorMessage = "Please enter a valid email address."
-          break
-        case "auth/too-many-requests":
-          // Sobra na ang failed attempts - rate limit
-          errorMessage = "Too many failed login attempts. Please try again later."
-          break
-        default:
-          // Fallback: gamitin ang original error.message kung meron
-          errorMessage = error.message || "Failed to sign in"
-      }
-
-      // I-set ang napiling mensahe sa `error` state para i-render sa UI
-      setError(errorMessage)
-      setIsLoading(false) // I-stop ang loading state kapag may error
+      setError("An error occurred during login. Please try again.")
+      setIsLoading(false)
     }
   }
 
@@ -177,21 +160,21 @@ export function LoginForm() {
               {/* Form element: onSubmit tumatawag sa handleSubmit */}
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-semibold text-blue-900" style={{ fontFamily: 'var(--font-geist-sans), system-ui, sans-serif' }}>
-                    Email
+                  <Label htmlFor="username" className="text-sm font-semibold text-blue-900" style={{ fontFamily: 'var(--font-geist-sans), system-ui, sans-serif' }}>
+                    Username
                   </Label>
-                  {/* Input para sa email/username with icon */}
+                  {/* Input para sa username with icon */}
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-blue-600 z-10" />
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-blue-600 z-10" />
                     <Input
-                      id="email"
+                      id="username"
                       type="text"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)} // nag-uupdate ng state habang nagta-type
+                      onChange={(e) => setEmail(e.target.value)} // ginagamit pa rin ang 'email' state variable pero ito na ang username
                       required
                       className="h-11 pl-10 border-2 border-blue-200 focus:border-blue-400 transition-colors bg-white text-gray-900 placeholder:text-gray-500 shadow-sm rounded-lg"
                       style={{ fontFamily: 'var(--font-geist-sans), system-ui, sans-serif' }}
-                      placeholder="Enter your email or username"
+                      placeholder="Enter your username"
                     />
                   </div>
                 </div>

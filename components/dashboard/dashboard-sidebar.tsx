@@ -24,7 +24,7 @@
 
 import { cn } from "@/lib/utils" // Utility function para sa conditional CSS classes
 import { Button } from "@/components/ui/button"
-import { Users, HelpCircle, BarChart3, GraduationCap, TrendingUp, Clock, FileBarChart, X, FolderOpen } from "lucide-react"
+import { Users, HelpCircle, BarChart3, GraduationCap, TrendingUp, Clock, FileBarChart, X, FolderOpen, Settings } from "lucide-react"
 import {
   Sheet,
   SheetContent,
@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/sheet"
 
 // Type definition para sa mga available views
-export type ActiveView = "overview" | "professors" | "evaluation-questions" | "evaluation-results" | "students" | "evaluation-duration" | "evaluation-history"
+export type ActiveView = "overview" | "professors" | "evaluation-questions" | "evaluation-results" | "students" | "evaluation-duration" | "evaluation-history" | "settings"
 
 // Interface para sa props ng DashboardSidebar
 interface DashboardSidebarProps {
@@ -88,6 +88,12 @@ const sidebarItems = [
     label: "Evaluation History",
     icon: FolderOpen, // Folder icon para sa history
     description: "View past evaluations",
+  },
+  {
+    id: "settings" as const, // System settings
+    label: "Settings",
+    icon: Settings, // Settings icon para sa configuration
+    description: "Account and security settings",
   },
 ]
 

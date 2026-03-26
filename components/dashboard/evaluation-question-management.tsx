@@ -47,7 +47,7 @@ import {
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card" // Card components
 import { Badge } from "@/components/ui/badge" // Badge component
 import { Plus, Edit, Trash2, HelpCircle, X, Search, List, BarChart3, ArrowLeft, Download, FileText, Upload, Maximize2, Users, MoreVertical } from "lucide-react" // Icons
-import { evaluationQuestionService, questionTypeService } from "@/lib/database" // Database functions
+import { evaluationQuestionService, questionTypeService, adminSettingsService } from "@/lib/database" // Database functions
 import type { EvaluationQuestion, Professor } from "@/lib/types" // Type definitions
 import { useToast } from "@/hooks/use-toast" // Toast notification hook
 import { sanitizeErrorMessage } from "@/lib/utils" // Helper function para sa pag-sanitize ng error messages
@@ -98,6 +98,22 @@ interface EvaluationQuestionManagementProps {
 // STEP 4: Main component function - dito nagsisimula ang lahat
 export function EvaluationQuestionManagement({ questions, professors, onRefresh }: EvaluationQuestionManagementProps) {
   const { toast } = useToast() // Toast notification para sa messages
+  
+  // State for question password
+  const [currentQuestionPassword, setCurrentQuestionPassword] = useState("LCCADMIN")
+
+  // Fetch question password from Firestore
+  useEffect(() => {
+    const fetchQuestionPassword = async () => {
+      try {
+        const password = await adminSettingsService.getQuestionPassword()
+        setCurrentQuestionPassword(password)
+      } catch (error) {
+        console.error("Error fetching question password:", error)
+      }
+    }
+    fetchQuestionPassword()
+  }, [])
 
   // STEP 5: State variables para sa pag-control ng mga popup/modal
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)        // Para sa popup ng pag-add ng tanong
@@ -992,7 +1008,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                           }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
-                              if (deleteAllPassword === "LCCADMIN") {
+                              if (deleteAllPassword.trim() === currentQuestionPassword.trim()) {
                                 setIsDeleteAllPasswordDialogOpen(false)
                                 setIsDeleteAllConfirmOpen(true)
                               } else {
@@ -1016,7 +1032,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                       <Button
                         variant="destructive"
                         onClick={() => {
-                          if (deleteAllPassword === "LCCADMIN") {
+                          if (deleteAllPassword.trim() === currentQuestionPassword.trim()) {
                             setIsDeleteAllPasswordDialogOpen(false)
                             setIsDeleteAllConfirmOpen(true)
                           } else {

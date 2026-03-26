@@ -21,6 +21,7 @@ import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react" // React hooks
 import { type User, onAuthStateChanged, signOut, signInAnonymously } from "firebase/auth" // Firebase auth functions
 import { auth } from "@/lib/firebase" // Firebase configuration
+import { adminSettingsService } from "@/lib/database" // Admin settings service
 
 // STEP 2: Define ang interface para sa AuthContext
 interface AuthContextType {
@@ -51,10 +52,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           // I-try ang anonymous sign-in para sa default admin
           const userCredential = await signInAnonymously(auth)
+          
+          // Fetch persisted profile from Firestore
+          const profile = await adminSettingsService.getAdminProfile()
+          
           const mockUser = {
             ...userCredential.user,
-            email: "admin@system.local", // Set ang email
-            displayName: "System Administrator", // Set ang display name
+            email: "admin@system.local", // Generic email for admin
+            displayName: profile?.username || "System Administrator", // Use username from settings
           } as User
           setUser(mockUser) // I-set ang user
           setInitializing(false) // Tapos na ang initialization
@@ -62,10 +67,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (error) {
           console.error("Failed to sign in anonymously for default admin:", error)
           // Fallback: gumawa ng mock user kung hindi gumana ang anonymous auth
+          const profile = await adminSettingsService.getAdminProfile()
           const mockUser = {
             uid: "default-admin",
             email: "admin@system.local",
-            displayName: "System Administrator",
+            displayName: profile?.username || "System Administrator",
           } as User
           setUser(mockUser) // I-set ang mock user
           setInitializing(false) // Tapos na ang initialization
