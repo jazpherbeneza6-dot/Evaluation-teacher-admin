@@ -147,12 +147,12 @@ export function DashboardOverview({ stats, departments, professors, totalEvaluat
           <CardContent className="pt-6">
             <div className="flex items-center justify-between pb-2 border-b border-border mb-4">
               <div className="flex items-center gap-2">
-                <CardTitle className="text-sm font-medium">Total faculties</CardTitle>
+                <CardTitle className="text-sm font-medium">Total College Departments</CardTitle>
                 <Building2 className="h-4 w-4 text-muted-foreground" />
               </div>
             </div>
             <div className="text-2xl font-bold">{departments.length}</div>
-            <p className="text-xs text-muted-foreground">Active faculties</p>
+            <p className="text-xs text-muted-foreground">Active departments</p>
           </CardContent>
         </Card>
 
@@ -180,7 +180,7 @@ export function DashboardOverview({ stats, departments, professors, totalEvaluat
               </div>
             </div>
             <div className="text-2xl font-bold">{overviewData.totalEvaluations}</div>
-            <p className="text-xs text-muted-foreground">Unique students who completed evaluations</p>
+            <p className="text-xs text-muted-foreground">Students who completed the evaluations</p>
           </CardContent>
         </Card>
 

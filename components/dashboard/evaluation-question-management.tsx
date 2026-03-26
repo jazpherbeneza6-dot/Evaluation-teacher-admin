@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/alert-dialog" // Confirmation dialog components
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card" // Card components
 import { Badge } from "@/components/ui/badge" // Badge component
-import { Plus, Edit, Trash2, HelpCircle, X, Search, List, BarChart3, ArrowLeft, Download, FileText, Upload, Maximize2, Users, MoreVertical } from "lucide-react" // Icons
+import { Plus, Edit, Trash2, HelpCircle, X, Search, List, BarChart3, ArrowLeft, Download, FileText, Upload, Maximize2, Users, MoreVertical, Award, Layout, ShieldCheck, Heart, TrendingUp, MessageSquare, BookOpen, ChevronRight } from "lucide-react" // Icons
 import { evaluationQuestionService, questionTypeService, adminSettingsService } from "@/lib/database" // Database functions
 import type { EvaluationQuestion, Professor } from "@/lib/types" // Type definitions
 import { useToast } from "@/hooks/use-toast" // Toast notification hook
@@ -143,6 +143,9 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
   const [questionType, setQuestionType] = useState<"Likert Scale" | "text">("text") // Tipo ng tanong
   const [options, setOptions] = useState<string[]>([""]) // Mga choices
   const [isSaving, setIsSaving] = useState(false) // Kung nagse-save pa ba
+  
+  // New state for card-based view
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
   // Delete All password protection state
   const [isDeleteAllPasswordDialogOpen, setIsDeleteAllPasswordDialogOpen] = useState(false)
@@ -290,24 +293,44 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
     const sectionOrder = [
       'A. Instructional Competence',
       'B. Classroom Management',
-      'C. Professionalism and Personal Qualities',
       'D. Student Support and Development',
+      'C. Professionalism and Personal Qualities',
       'E. Research',
+      'Other',
       'F. Comments',
-      'Other'
+      'Comments',
+      'verbal interpretation',
+      'F. verbal interpretation'
     ]
 
     const sorted = new Map<string, EvaluationQuestion[]>()
-    sectionOrder.forEach((section) => {
-      if (sections.has(section)) {
-        sorted.set(section, sections.get(section)!)
-      }
+    
+    // Sort sections using predefined order with fuzzy matching
+    sectionOrder.forEach((orderSection) => {
+      // Find matches in the actual sections map
+      sections.forEach((questions, actualSection) => {
+        if (sorted.has(actualSection)) return
+        
+        // Improve normalization: handle '&' vs 'and', casing, and prefixes
+        const normalize = (s: string) => s.toLowerCase()
+          .replace(/^[a-f]\.\s*/, '') // Remove prefixes like "A. "
+          .replace(/&/g, 'and')       // Replace & with and
+          .replace(/\s+/g, ' ')       // Normalize spaces
+          .trim()
+        
+        const normalizedActual = normalize(actualSection)
+        const normalizedOrder = normalize(orderSection)
+        
+        if (actualSection === orderSection || normalizedActual === normalizedOrder) {
+          sorted.set(actualSection, questions)
+        }
+      })
     })
 
     // Add any remaining sections not in the predefined order
-    sections.forEach((questions, section) => {
-      if (!sorted.has(section)) {
-        sorted.set(section, questions)
+    sections.forEach((questions, actualSection) => {
+      if (!sorted.has(actualSection)) {
+        sorted.set(actualSection, questions)
       }
     })
 
@@ -871,6 +894,17 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
     return questions.filter(q => q.questionText.toLowerCase().trim() === refText);
   }
 
+  const getCategoryTheme = (section: string) => {
+    const lower = section.toLowerCase()
+    if (lower.includes('instructional')) return { icon: <Award className="h-8 w-8 text-primary" />, color: 'from-primary/10 to-primary/5', border: 'hover:border-primary/50' }
+    if (lower.includes('classroom')) return { icon: <Layout className="h-8 w-8 text-blue-500" />, color: 'from-blue-500/10 to-blue-500/5', border: 'hover:border-blue-500/50' }
+    if (lower.includes('professionalism')) return { icon: <ShieldCheck className="h-8 w-8 text-purple-500" />, color: 'from-purple-500/10 to-purple-500/5', border: 'hover:border-purple-500/50' }
+    if (lower.includes('student support')) return { icon: <Heart className="h-8 w-8 text-rose-500" />, color: 'from-rose-500/10 to-rose-500/5', border: 'hover:border-rose-500/50' }
+    if (lower.includes('research')) return { icon: <TrendingUp className="h-8 w-8 text-emerald-500" />, color: 'from-emerald-500/10 to-emerald-500/5', border: 'hover:border-emerald-500/50' }
+    if (lower.includes('comment') || lower.includes('verbal')) return { icon: <MessageSquare className="h-8 w-8 text-orange-500" />, color: 'from-orange-500/10 to-orange-500/5', border: 'hover:border-orange-500/50' }
+    return { icon: <BookOpen className="h-8 w-8 text-slate-500" />, color: 'from-slate-500/10 to-slate-500/5', border: 'hover:border-slate-500/50' }
+  }
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
@@ -1093,10 +1127,57 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         {/* Questions Display */}
         <div>
           {(() => {
-            // Get sections to display based on selection
-            const sectionsToShow = selectedSection === "all"
-              ? Array.from(questionsBySection.entries())
-              : questionsBySection.has(selectedSection)
+            // STEP: Card-based category selection
+            if (!selectedCategory) {
+              const sections = Array.from(questionsBySection.keys())
+              
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
+                  {sections.map((section) => {
+                    const theme = getCategoryTheme(section)
+                    const label = getSectionDisplayName(section).replace(/^[A-F]\.\s+/, '')
+                    const qCount = questionsBySection.get(section)?.length || 0
+                    
+                    return (
+                      <Card 
+                        key={section}
+                        className={`group relative overflow-hidden border cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.03] bg-gradient-to-br ${theme.color} ${theme.border}`}
+                        onClick={() => {
+                          setSelectedCategory(section)
+                          setSelectedSection(section)
+                        }}
+                      >
+                        <CardContent className="p-8">
+                          <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="p-4 rounded-2xl bg-background shadow-sm group-hover:shadow-md transition-all group-hover:scale-110">
+                              {theme.icon}
+                            </div>
+                            <div>
+                              <CardTitle className="text-xl mb-1 group-hover:text-primary transition-colors">{label}</CardTitle>
+                              <CardDescription>Click to manage questions and criteria</CardDescription>
+                            </div>
+                            <div className="pt-2">
+                              <Badge variant="secondary" className="px-3 py-1 text-sm font-semibold rounded-full group-hover:bg-primary group-hover:text-primary-foreground transition-all">
+                                {qCount} Question{qCount !== 1 ? 's' : ''}
+                              </Badge>
+                            </div>
+                          </div>
+                          <div className="absolute top-4 right-4 text-muted-foreground/20 group-hover:text-primary/40 transition-colors">
+                            <ChevronRight className="h-6 w-6" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )
+            }
+
+            // Sync: if we selected a category, ensure sectionsToShow and displaySections only have that one
+            const sectionsToShow =
+              selectedSection === "all"
+                ? Array.from(questionsBySection.entries())
+                : questionsBySection.has(selectedSection)
                 ? [[selectedSection, questionsBySection.get(selectedSection)!]] as [string, EvaluationQuestion[]][]
                 : []
 
@@ -1145,31 +1226,38 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
                 'Instructional Competence',
                 'B. Classroom Management',
                 'Classroom Management',
-                'C. Professionalism and Personal Qualities',
-                'Professionalism and Personal Qualities',
                 'D. Student Support and Development',
                 'Student Support and Development',
+                'C. Professionalism and Personal Qualities',
+                'Professionalism and Personal Qualities',
                 'E. Research',
                 'Research',
+                'Other',
                 'F. Comments',
                 'Comments',
                 'verbal interpretation',
-                'F. verbal interpretation',
-                'Other'
+                'F. verbal interpretation'
               ]
 
               // Helper function to get section priority for sorting
               const getSectionPriority = (section: string): number => {
                 const normalized = section || 'Other'
+                
+                const normalize = (s: string) => s.toLowerCase()
+                  .replace(/^[a-f]\.\s*/, '')
+                  .replace(/&/g, 'and')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                
+                const normalizedValue = normalize(normalized)
+
                 // Check for exact match first
                 const exactIndex = sectionOrder.indexOf(normalized)
                 if (exactIndex !== -1) return exactIndex
 
-                // Check for partial match (case-insensitive)
-                const lowerSection = normalized.toLowerCase()
+                // Check for normalized match
                 for (let i = 0; i < sectionOrder.length; i++) {
-                  if (sectionOrder[i].toLowerCase().includes(lowerSection) ||
-                    lowerSection.includes(sectionOrder[i].toLowerCase())) {
+                  if (normalize(sectionOrder[i]) === normalizedValue) {
                     return i
                   }
                 }
@@ -1188,6 +1276,20 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
               // Show sections with headers, in order
               return (
                 <div className="space-y-6 sm:space-y-8">
+                  <div className="flex items-center gap-4 mb-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setSelectedCategory(null)
+                        setSelectedSection("all")
+                      }}
+                      className="gap-2 text-primary font-semibold hover:bg-primary/10"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Back to Categories
+                    </Button>
+                  </div>
                   {sortedDisplaySections.map(([section, sectionQuestions]) => (
                     <div key={section} className="space-y-3 sm:space-y-4">
                       <h4 className="text-lg sm:text-xl font-bold text-foreground border-b pb-2 px-1 sm:px-0">{getSectionDisplayName(section)}</h4>
@@ -1264,6 +1366,20 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
             // For specific section, show with section header
             return (
               <div className="space-y-6 sm:space-y-8">
+                <div className="flex items-center gap-4 mb-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        setSelectedCategory(null)
+                        setSelectedSection("all")
+                      }}
+                      className="gap-2 text-primary font-semibold hover:bg-primary/10"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Back to Categories
+                    </Button>
+                </div>
                 {displaySections.map(([section, sectionQuestions]) => (
                   <div key={section} className="space-y-3 sm:space-y-4">
                     <h4 className="text-lg sm:text-xl font-bold text-foreground border-b pb-2 px-1 sm:px-0">{getSectionDisplayName(section)}</h4>

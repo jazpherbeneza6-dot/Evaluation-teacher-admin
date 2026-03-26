@@ -460,7 +460,21 @@ export function ProfessorManagement({
       departmentsSet.add(dept.name)
     })
 
-    const result = Array.from(departmentsSet) // I-convert ang set sa array
+    const result = Array.from(departmentsSet).sort((a, b) => {
+      // Find the corresponding department objects to compare their creation dates
+      const deptA = departments.find(d => d.name === a)
+      const deptB = departments.find(d => d.name === b)
+      
+      if (deptA && deptB) {
+        // Sort by createdAt descending (newest first / "sa unahan agad")
+        return deptB.createdAt.getTime() - deptA.createdAt.getTime()
+      }
+      
+      // Fallback for cases where one or both departments are not in the official list
+      if (deptA) return -1
+      if (deptB) return 1
+      return a.localeCompare(b)
+    })
     return result // I-return ang unique departments
   }, [filteredProfessors, departments, filters.searchTerm, filters.selectedDepartment]) // I-run kapag mag-change ang dependencies
 

@@ -290,9 +290,9 @@ export function TopPerformingProfessors() {
     doc.setTextColor(120, 120, 120)
     doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26)
 
-    const colX = [14, 30, 100, 190, 240]
-    const colWidths = [14, 68, 88, 48, 40]
-    const colHeaders = ["Rank", "Professor", "Department", "Performance", "Score"]
+    const colX = [14, 30, 190, 240]
+    const colWidths = [14, 150, 48, 40]
+    const colHeaders = ["Rank", "Professor", "Performance", "Score"]
     const rowHeight = 8
 
     let y = 34
@@ -303,77 +303,146 @@ export function TopPerformingProfessors() {
       const categoryProfessors = allByCategory[category.key] || []
       if (categoryProfessors.length === 0) return
 
-      const sorted = [...categoryProfessors].sort((a, b) => b.performanceScore - a.performanceScore)
+      // Pre-calculate global ranks for this category
+      const globalSorted = [...categoryProfessors].sort((a, b) => b.performanceScore - a.performanceScore)
+      const rankMap = new Map<string, number>()
+      globalSorted.forEach((p, i) => rankMap.set(p.professorId, i + 1))
 
-      // New page if not enough room for header + at least one row
-      if (!isFirstCategory && y > pageHeight - 40) {
+      // Group professors by department within this category
+      const deptGroups = categoryProfessors.reduce((acc, p) => {
+        const dept = p.departmentName || "General"
+        if (!acc[dept]) acc[dept] = []
+        acc[dept].push(p)
+        return acc
+      }, {} as { [key: string]: TopProfessorData[] })
+
+      // Sort departments by their highest professor's score (descending)
+      const sortedDepts = Object.keys(deptGroups).sort((a, b) => {
+        const maxA = Math.max(...deptGroups[a].map(p => p.performanceScore), 0)
+        const maxB = Math.max(...deptGroups[b].map(p => p.performanceScore), 0)
+        return maxB - maxA
+      })
+
+      // New page if not enough room for category header + at least one department divider and row
+      if (!isFirstCategory && y > pageHeight - 50) {
         doc.addPage()
         y = 20
       }
 
-      // Category header
-      if (!isFirstCategory) y += 6
-      doc.setFontSize(12)
+      // Category header - Premium Slate 900
+      if (!isFirstCategory) y += 8
+      doc.setFontSize(14)
       doc.setFont("helvetica", "bold")
-      doc.setTextColor(30, 30, 30)
+      doc.setTextColor(15, 23, 42) 
       doc.text(category.label, 14, y)
       y += 4
-      doc.setDrawColor(59, 130, 246)
-      doc.setLineWidth(0.5)
+      doc.setDrawColor(30, 80, 160) // Professional Blue
+      doc.setLineWidth(1)
       doc.line(14, y, pageWidth - 14, y)
-      y += 6
+      y += 12
 
-      // Table header
-      doc.setFillColor(245, 245, 245)
-      doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
-      doc.setFontSize(10)
-      doc.setFont("helvetica", "bold")
-      doc.setTextColor(60, 60, 60)
-      colHeaders.forEach((header, i) => doc.text(header, colX[i], y))
+      let isHeaderOnPage = false
 
-      doc.setFont("helvetica", "normal")
-      doc.setTextColor(30, 30, 30)
-      y += rowHeight + 2
-
-      sorted.forEach((professor, index) => {
-        if (y > pageHeight - 20) {
+      sortedDepts.forEach((dept) => {
+        const deptProfs = [...deptGroups[dept]].sort((a, b) => b.performanceScore - a.performanceScore)
+        
+        // Department divider check
+        if (y > pageHeight - 35) {
           doc.addPage()
           y = 20
-          doc.setFillColor(245, 245, 245)
+          isHeaderOnPage = false
+        }
+        
+        // Render Table Header if not on this page
+        if (!isHeaderOnPage) {
+          doc.setFillColor(241, 245, 249) // Slate 100
           doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
-          doc.setFontSize(10)
+          doc.setFontSize(9)
           doc.setFont("helvetica", "bold")
-          doc.setTextColor(60, 60, 60)
-          colHeaders.forEach((header, i) => doc.text(header, colX[i], y))
-          doc.setFont("helvetica", "normal")
-          doc.setTextColor(30, 30, 30)
+          doc.setTextColor(71, 85, 105) // Slate 600
+          colHeaders.forEach((header, i) => doc.text(header.toUpperCase(), colX[i], y))
           y += rowHeight + 2
+          isHeaderOnPage = true
         }
 
-        if (index % 2 === 0) {
-          doc.setFillColor(252, 252, 252)
-          doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
-        }
-
-        doc.setFontSize(10)
-        doc.text(`${index + 1}`, colX[0], y)
-        doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
-        doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
-        doc.text(getPerformanceLabel(professor.performanceScore), colX[3], y)
-        doc.text(`${professor.performanceScore}%`, colX[4], y)
+        // Department Section Divider Row - Premium Blue 50
+        doc.setFillColor(239, 246, 255)
+        doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(9)
+        doc.setTextColor(30, 58, 138) // Blue 900
+        doc.text(`DEPARTMENT: ${truncateText(dept.toUpperCase(), 220)}`, 14, y)
         y += rowHeight
+
+        deptProfs.forEach((professor, index) => {
+          // Check for page break within rows
+          if (y > pageHeight - 20) {
+            doc.addPage()
+            y = 20
+            isHeaderOnPage = false
+            // Re-render header
+            doc.setFillColor(241, 245, 249)
+            doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
+            doc.setFontSize(9)
+            doc.setFont("helvetica", "bold")
+            doc.setTextColor(71, 85, 105)
+            colHeaders.forEach((header, i) => doc.text(header.toUpperCase(), colX[i], y))
+            y += rowHeight + 2
+            isHeaderOnPage = true
+            
+            // Show continued dept
+            doc.setFillColor(239, 246, 255)
+            doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+            doc.setFont("helvetica", "bold")
+            doc.setTextColor(30, 58, 138)
+            doc.text(`DEPARTMENT: ${truncateText(dept.toUpperCase(), 180)} (CONT...)`, 14, y)
+            y += rowHeight
+          }
+
+          // Alternating row background for elegance
+          if (index % 2 !== 0) {
+            doc.setFillColor(248, 250, 252) // Slate 50
+            doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+          }
+
+          doc.setFont("helvetica", "normal")
+          doc.setTextColor(15, 23, 42)
+          doc.setFontSize(10)
+
+          const rank = rankMap.get(professor.professorId) || 0
+          doc.text(`${rank}`, colX[0], y)
+          doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
+          
+          // Performance color-coding (subtle)
+          const label = getPerformanceLabel(professor.performanceScore)
+          if (label === "Excellent") doc.setTextColor(21, 128, 61) // Green 700
+          else if (label === "Very Good") doc.setTextColor(37, 99, 235) // Blue 600
+          else if (label === "Good") doc.setTextColor(180, 83, 9) // Amber 700
+          else doc.setTextColor(220, 38, 38) // Red 600
+          
+          doc.text(label, colX[2], y)
+          
+          doc.setTextColor(15, 23, 42)
+          doc.setFont("helvetica", "bold")
+          doc.text(`${professor.performanceScore}%`, colX[3], y)
+          doc.setFont("helvetica", "normal")
+          
+          y += rowHeight
+        })
+
+        y += 4 // Spacing between departments
       })
 
       y += 2
       doc.setFontSize(8)
-      doc.setTextColor(120, 120, 120)
-      doc.text(`${sorted.length} professor${sorted.length !== 1 ? "s" : ""} in ${category.label}`, 14, y)
-      y += 6
+      doc.setTextColor(100, 116, 139) // Slate 500
+      doc.text(`${categoryProfessors.length} professor${categoryProfessors.length !== 1 ? "s" : ""} in ${category.label}`, 14, y)
+      y += 12
 
       isFirstCategory = false
     })
 
-    doc.save(`all_professors_performance_by_category.pdf`)
+    doc.save(`all_professors_performance_by_category_${new Date().toISOString().split('T')[0]}.pdf`)
   }
 
   // Get total count of all professors across all categories
@@ -520,52 +589,88 @@ export function TopPerformingProfessors() {
                       </TableHeader>
                       <TableBody>
                         {filteredAndSortedProfessors.length > 0 ? (
-                          filteredAndSortedProfessors.map((professor, index) => (
-                            <TableRow key={professor.professorId} className="hover:bg-muted/50">
-                              <TableCell>
-                                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${getRankBadgeColor(index)}`}>
-                                  {index + 1}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{professor.professorName}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm text-muted-foreground">{professor.departmentName}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="space-y-1">
-                                  <div className="relative h-2 w-full bg-muted rounded-full overflow-hidden">
-                                    <div
-                                      className={`h-full transition-all duration-500 ${getProgressBarColor(professor.performanceScore)}`}
-                                      style={{ width: `${professor.performanceScore}%` }}
-                                    />
-                                  </div>
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-xs ${getPerformanceColor(professor.performanceScore)}`}
-                                  >
-                                    {getPerformanceLabel(professor.performanceScore)}
-                                  </Badge>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-center">
-                                <div className={`font-bold ${getPerformanceColor(professor.performanceScore)}`}>
-                                  {professor.performanceScore}%
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-center">
-                                <div className="text-sm">
-                                  <div className="text-chart-5 font-medium">
-                                    {professor.positiveResponses}/{professor.totalResponses}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    SA: {professor.stronglyAgreeCount} | A: {professor.agreeCount}
-                                  </div>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
+                          (() => {
+                            // Group professors by department for the UI table
+                            const groups: { [dept: string]: TopProfessorData[] } = {}
+                            filteredAndSortedProfessors.forEach(p => {
+                              const dept = p.departmentName || "General"
+                              if (!groups[dept]) groups[dept] = []
+                              groups[dept].push(p)
+                            })
+
+                            // Sort departments by top score for consistency with PDF
+                            const sortedDepts = Object.keys(groups).sort((a, b) => {
+                              const maxA = Math.max(...groups[a].map(p => p.performanceScore), 0)
+                              const maxB = Math.max(...groups[b].map(p => p.performanceScore), 0)
+                              return maxB - maxA
+                            })
+
+                            // Pre-calculate global ranks based on the entire sorted set
+                            const rankMap = new Map<string, number>()
+                            filteredAndSortedProfessors.forEach((p, i) => rankMap.set(p.professorId, i + 1))
+
+                            return sortedDepts.map(dept => (
+                              <div key={dept} className="contents">
+                                <TableRow className="bg-primary/5 hover:bg-primary/5 border-l-4 border-l-primary">
+                                  <TableCell colSpan={6} className="py-2 px-4">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                                      <span className="font-bold text-primary text-[10px] uppercase tracking-widest">DEPARTMENT: {dept}</span>
+                                      <span className="text-[10px] text-muted-foreground font-normal">
+                                        ({groups[dept].length} professor{groups[dept].length !== 1 ? 's' : ''})
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                                {groups[dept].map((professor) => (
+                                  <TableRow key={professor.professorId} className="hover:bg-muted/50">
+                                    <TableCell>
+                                      <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${getRankBadgeColor((rankMap.get(professor.professorId) || 1) - 1)}`}>
+                                        {rankMap.get(professor.professorId)}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="font-medium">{professor.professorName}</div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="text-sm text-muted-foreground">{professor.departmentName}</div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="space-y-1">
+                                        <div className="relative h-2 w-full bg-muted rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full transition-all duration-500 ${getProgressBarColor(professor.performanceScore)}`}
+                                            style={{ width: `${professor.performanceScore}%` }}
+                                          />
+                                        </div>
+                                        <Badge
+                                          variant="outline"
+                                          className={`text-xs ${getPerformanceColor(professor.performanceScore)}`}
+                                        >
+                                          {getPerformanceLabel(professor.performanceScore)}
+                                        </Badge>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <div className={`font-bold ${getPerformanceColor(professor.performanceScore)}`}>
+                                        {professor.performanceScore}%
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <div className="text-sm">
+                                        <div className="text-chart-5 font-medium">
+                                          {professor.positiveResponses}/{professor.totalResponses}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          SA: {professor.stronglyAgreeCount} | A: {professor.agreeCount}
+                                        </div>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </div>
+                            ))
+                          })()
                         ) : (
                           <TableRow>
                             <TableCell colSpan={6} className="text-center py-8">
