@@ -939,25 +939,6 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
           <div className="flex flex-col gap-4">
             {/* Filters Row - Now Inline */}
             <div className="flex flex-col sm:flex-row gap-3 w-full">
-              {/* Section Filter */}
-              <div className="flex flex-col gap-2 w-full sm:w-[200px]">
-                <Label htmlFor="section-filter" className="text-xs font-medium text-muted-foreground">
-                  Filter by Section
-                </Label>
-                <Select value={selectedSection} onValueChange={setSelectedSection}>
-                  <SelectTrigger id="section-filter" className="w-full">
-                    <SelectValue placeholder="Select a section" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sections</SelectItem>
-                    {Array.from(questionsBySection.entries()).map(([section, questions]) => (
-                      <SelectItem key={section} value={section}>
-                        {getSectionDisplayName(section)} ({questions.length})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
               {/* Search Bar */}
               <div className="flex flex-col gap-2 flex-1">
