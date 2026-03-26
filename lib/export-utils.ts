@@ -29,18 +29,68 @@ export interface ExportData {
 }
 
 // STEP 3: exportToCSV function - para sa pag-export ng data sa CSV format
+// Helper function para i-generate ang acronym ng department name
+const getDepartmentAcronym = (name: string): string => {
+  if (!name) return "";
+  
+  // Custom mappings para sa mas accurate na acronyms
+  const customMappings: Record<string, string> = {
+    "Information Technology": "IT",
+    "Computer Science": "CS",
+    "Business Administration": "BA",
+    "Secretarial Administration": "SA",
+    "Hotels and Restaurant": "HR",
+    "Hotel and Restaurant": "HR",
+    "Hospitality Management": "HM",
+    "Secondary Education": "BSED",
+    "Elementary Education": "BEED",
+    "Physical Education": "PE",
+    "Accountancy": "ACC",
+    "Criminology": "CRIM",
+    "Psychology": "PSYCH",
+    "Information Systems": "IS",
+  };
+
+  let processedName = name;
+  // I-handle ang common phrases muna
+  for (const [full, short] of Object.entries(customMappings)) {
+    const regex = new RegExp(full, 'gi');
+    processedName = processedName.replace(regex, short);
+  }
+
+  // I-handle ang hyphens/dashes separately (e.g., IT - Programming)
+  if (processedName.includes(' - ')) {
+    return processedName.split(' - ')
+      .map(part => getDepartmentAcronym(part.trim()))
+      .join('-');
+  }
+
+  // Words na hindi kasama sa acronym
+  const ignoreWords = ['in', 'and', 'the', 'of', 'for', 'with', 'to', 'at'];
+  const words = processedName.split(/\s+/)
+    .filter(word => word && !ignoreWords.includes(word.toLowerCase()));
+
+  return words.map(word => {
+    // Kung ang salita ay acronym na (e.g., BS, IT, NC), panatilihin ito
+    if (word.length >= 2 && word === word.toUpperCase()) return word;
+    // Otherwise, kunin lang ang first letter
+    return word[0].toUpperCase();
+  }).join('');
+};
+
+// STEP 3: exportToCSV function - para sa pag-export ng data sa CSV format
 export const exportToCSV = (data: ExportData) => {
   // I-create ang CSV content na may headers at data
   const csvContent = [
-    ["Name", "Email", "Department", "Created Date"], // Headers
+    ["Name", "Email", "Dept", "Created Date"], // Headers updated to Dept
     ...data.professors.map((prof) => [
       prof.name, // Professor name
       prof.email, // Professor email
-      prof.departmentName, // Department name
+      getDepartmentAcronym(prof.departmentName), // Department acronym
       prof.createdAt.toLocaleDateString(), // Created date
     ]),
   ]
-    .map((row) => row.map(field => `"${field}"`).join(",")) // I-wrap ang bawat field sa quotes
+    .map((row) => row.map(field => `"${field ?? ''}"`).join(",")) // I-wrap ang bawat field sa quotes
     .join("\n") // I-join ang rows gamit ang newline
 
   // I-create ang Blob object para sa CSV file
@@ -80,10 +130,10 @@ export const exportToPDF = (data: ExportData) => {
       yPosition = 20
     }
     
-    // I-add ang professor data
+    // I-add ang professor data gamit ang acronym para sa department
     doc.text(prof.name || "", 14, yPosition)
     doc.text(prof.email || "", 60, yPosition)
-    doc.text(prof.departmentName || "", 120, yPosition)
+    doc.text(getDepartmentAcronym(prof.departmentName || ""), 120, yPosition)
     doc.text(prof.createdAt.toLocaleDateString(), 160, yPosition)
     
     yPosition += 8 // I-move ang position para sa next row
@@ -110,15 +160,15 @@ export const exportToDOCX = async (data: ExportData) => {
         }),
         new TableCell({
           children: [new Paragraph({ children: [new TextRun({ text: "Email", bold: true })] })],
-          width: { size: 35, type: WidthType.PERCENTAGE }, // 35% width
+          width: { size: 40, type: WidthType.PERCENTAGE }, // Increased email width
         }),
         new TableCell({
-          children: [new Paragraph({ children: [new TextRun({ text: "Department", bold: true })] })],
-          width: { size: 25, type: WidthType.PERCENTAGE }, // 25% width
+          children: [new Paragraph({ children: [new TextRun({ text: "Dept", bold: true })] })],
+          width: { size: 15, type: WidthType.PERCENTAGE }, // Reduced dept width for acronym
         }),
         new TableCell({
           children: [new Paragraph({ children: [new TextRun({ text: "Created", bold: true })] })],
-          width: { size: 15, type: WidthType.PERCENTAGE }, // 15% width
+          width: { size: 20, type: WidthType.PERCENTAGE }, // 20% width
         }),
       ],
     }),
@@ -134,7 +184,7 @@ export const exportToDOCX = async (data: ExportData) => {
               children: [new Paragraph({ children: [new TextRun({ text: prof.email })] })],
             }),
             new TableCell({
-              children: [new Paragraph({ children: [new TextRun({ text: prof.departmentName })] })],
+              children: [new Paragraph({ children: [new TextRun({ text: getDepartmentAcronym(prof.departmentName) })] })],
             }),
             new TableCell({
               children: [new Paragraph({ children: [new TextRun({ text: prof.createdAt.toLocaleDateString() })] })],

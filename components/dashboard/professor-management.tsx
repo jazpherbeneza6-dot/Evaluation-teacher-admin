@@ -115,6 +115,7 @@ export function ProfessorManagement({
   const [professorsState, setProfessorsState] = useState<Professor[]>(initialProfessors) // Local state para sa professors
   const [professorImageUrls, setProfessorImageUrls] = useState<Record<string, string | null>>({}) // Cache ng professor images from MEGA
   const [departmentImageUrls, setDepartmentImageUrls] = useState<Record<string, string | null>>({}) // Cache ng department images from MEGA
+  const [showAllProfessorsTable, setShowAllProfessorsTable] = useState(false) // State para sa pag-switch ng view (Faculties vs All Professors)
 
   // State variables para sa pag-edit ng subjects & sections
   const [isEditSubjectsDialogOpen, setIsEditSubjectsDialogOpen] = useState(false) // Para sa popup ng pag-edit ng subjects
@@ -128,6 +129,23 @@ export function ProfessorManagement({
     sectionBreakdown: { section: string; count: number }[]
   } | null>(null)
   const [isLoadingStats, setIsLoadingStats] = useState(false) // Loading state para sa stats
+
+  // STEP 6: Helper function para sa department acronym sa UI
+  const getDepartmentAcronym = (name: string): string => {
+    if (!name) return "";
+    const ignoreWords = ['in', 'and', 'the', 'of', 'for', 'with', 'to', 'at'];
+    // Fast path: Check for common ones
+    if (name.includes("Information Systems")) return "BSIS";
+    if (name.includes("Business Administration")) return "BSBA";
+    if (name.includes("Information Technology")) return "BSIT";
+    
+    return name.split(/\s+/)
+      .filter(word => word && !ignoreWords.includes(word.toLowerCase()))
+      .map(word => {
+        if (word.length >= 2 && word === word.toUpperCase()) return word;
+        return word[0].toUpperCase();
+      }).join('');
+  };
 
   // STEP 8: State variables para sa form ng pag-add/edit ng professor
   const [formData, setFormData] = useState({
@@ -460,23 +478,37 @@ export function ProfessorManagement({
       departmentsSet.add(dept.name)
     })
 
+    // Identify which departments contain professors matching the current search
+    const hasMatch = (deptName: string) => {
+      const search = filters.searchTerm.toLowerCase().trim()
+      if (!search) return false
+      // If any filtered professor belongs to this department, it should be prioritized
+      return filteredProfessors.some(p => p.departmentName === deptName)
+    }
+
     const result = Array.from(departmentsSet).sort((a, b) => {
-      // Find the corresponding department objects to compare their creation dates
+      const matchA = hasMatch(a)
+      const matchB = hasMatch(b)
+
+      // Prioritize departments with search matches (show at the front)
+      if (matchA && !matchB) return -1
+      if (!matchA && matchB) return 1
+
+      // If both (or neither) have matches, use the standard sorting logic
       const deptA = departments.find(d => d.name === a)
       const deptB = departments.find(d => d.name === b)
       
       if (deptA && deptB) {
-        // Sort by createdAt descending (newest first / "sa unahan agad")
+        // Sort by createdAt descending
         return deptB.createdAt.getTime() - deptA.createdAt.getTime()
       }
       
-      // Fallback for cases where one or both departments are not in the official list
       if (deptA) return -1
       if (deptB) return 1
       return a.localeCompare(b)
     })
-    return result // I-return ang unique departments
-  }, [filteredProfessors, departments, filters.searchTerm, filters.selectedDepartment]) // I-run kapag mag-change ang dependencies
+    return result 
+  }, [filteredProfessors, departments, filters.searchTerm, filters.selectedDepartment])
 
   // STEP 15: Helper functions para sa UI interactions
   const handleDepartmentClick = (departmentName: string) => {
@@ -1149,7 +1181,7 @@ export function ProfessorManagement({
 
   // STEP 27: Export data para sa pag-export ng reports
   const exportData: ExportData = {
-    professors: filteredProfessors, // I-export ang filtered professors
+    professors: professorsState, // I-export ang lahat ng professors (Lahat makikita)
     title: "Professor Management Report", // Title ng report
     generatedAt: new Date(), // Date kung kailan ginawa ang report
   }
@@ -1323,17 +1355,23 @@ export function ProfessorManagement({
             <p className="text-[10px] sm:text-xs text-muted-foreground">Across all departments</p>
           </CardContent>
         </Card>
-        {/* Filtered Results Card */}
-        <Card>
+        {/* Filtered Results Card - Clickable to show table */}
+        <Card 
+          className="cursor-pointer hover:shadow-md transition-all border-border"
+          onClick={() => {
+            setShowAllProfessorsTable(!showAllProfessorsTable)
+            setSelectedDepartmentView(null)
+          }}
+        >
           <CardContent className="pt-4 sm:pt-6">
             <div className="flex items-center justify-between pb-2 border-b border-border mb-3 sm:mb-4">
               <div className="flex items-center gap-2">
-                <div className="text-xs sm:text-sm font-medium">Filtered Results</div>
-                <Search className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
+                <div className="text-xs sm:text-sm font-medium">{showAllProfessorsTable ? "Back to Faculties" : "All Professors"}</div>
+                {showAllProfessorsTable ? <ArrowLeft className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5 text-muted-foreground" />}
               </div>
             </div>
-            <div className="text-xl sm:text-2xl font-bold">{filteredProfessors.length}</div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground">Matching current filters</p>
+            <div className="text-xl sm:text-2xl font-bold">{professorsState.length}</div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Click to {showAllProfessorsTable ? "view faculties" : "view full roster"}</p>
           </CardContent>
         </Card>
         {/* Faculties Card */}
@@ -1360,7 +1398,7 @@ export function ProfessorManagement({
         onDepartmentAdded={onRefresh}
       />
 
-      {/* STEP 33: Main content - department view o faculty list */}
+      {/* STEP 33: Main content - department view, faculty list o full table */}
       {selectedDepartmentView ? (
         <div className="space-y-6">
           {/* Back button */}
@@ -1374,6 +1412,7 @@ export function ProfessorManagement({
               Back to All Faculties
             </Button>
           </div>
+          {/* ... existing professor card list logic ... */}
 
 
           {/* STEP 34: Professor cards - display ng mga professors sa selected department */}
@@ -1579,6 +1618,43 @@ export function ProfessorManagement({
               </CardContent>
             </Card>
           )}
+        </div>
+      ) : showAllProfessorsTable ? (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-bold text-gray-800">Full Professor Roster</h3>
+            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+              {professorsState.length} Total
+            </Badge>
+          </div>
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {professorsState.map((professor) => (
+              <Card key={professor.id} className="hover:shadow-lg transition-all border-border">
+                <CardContent className="p-4 flex items-center gap-3">
+                   <Avatar className="h-12 w-12 border-2 border-blue-100 shadow-sm">
+                    <AvatarImage src={professor.imageUrl || ""} />
+                    <AvatarFallback className="bg-blue-50 text-blue-600 font-bold">
+                      {professor.name.charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-gray-900 truncate text-sm sm:text-base">{professor.name}</h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 text-[10px] h-4">
+                        {getDepartmentAcronym(professor.departmentName || "Other")}
+                      </Badge>
+                      <span className="text-[10px] text-gray-500 truncate">{professor.email}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => showProfessorInfo(professor)} className="h-7 w-7">
+                      <Info className="h-3.5 w-3.5 text-gray-500" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="grid gap-3 sm:gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
