@@ -1358,7 +1358,7 @@ export const studentService = {
       return () => { } // Return empty unsubscribe function
     }
   },
-  async create(firstName: string, lastName: string, suffix: string, studentId: string, email: string, password: string, yearLevel: string, course: string, section: string, subject?: string, status?: string, accountStatus?: string): Promise<string> {
+  async create(firstName: string, lastName: string, suffix: string, studentId: string, email: string, password: string, yearLevel: string, course: string, section: string, subject?: string, status?: string, accountStatus?: string, subjects?: string[]): Promise<string> {
     try {
       // Check if student ID already exists
       const existingStudentQuery = query(
@@ -1404,6 +1404,9 @@ export const studentService = {
       }
       if (status) {
         studentData.status = status
+      }
+      if (subjects && subjects.length > 0) {
+        studentData.subjects = subjects
       }
 
       const docRef = await addDoc(collection(db, "users"), studentData)
@@ -1522,7 +1525,7 @@ export const studentService = {
     }
   },
 
-  async update(id: string, firstName: string, lastName: string, suffix: string, studentId: string, email: string, yearLevel: string, course: string, section: string, password?: string, subject?: string, status?: string, accountStatus?: string): Promise<void> {
+  async update(id: string, firstName: string, lastName: string, suffix: string, studentId: string, email: string, yearLevel: string, course: string, section: string, password?: string, subject?: string, status?: string, accountStatus?: string, subjects?: string[]): Promise<void> {
     try {
       // Only check for duplicate student ID if a non-empty studentId is provided
       if (studentId && studentId.trim() !== "") {
@@ -1561,6 +1564,10 @@ export const studentService = {
         course,
         section,
         updatedAt: Timestamp.now(),
+      }
+
+      if (subjects && subjects.length > 0) {
+        updateData.subjects = subjects
       }
 
       // Only update studentId if a non-empty value is provided

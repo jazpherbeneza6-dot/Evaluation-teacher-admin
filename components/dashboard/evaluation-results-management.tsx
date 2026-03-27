@@ -21,6 +21,8 @@ import jsPDF from "jspdf"
 import { firebaseEvaluationService, type FirebaseEvaluationResult } from "@/lib/firebase-evaluation-service"
 import type { EvaluationQuestion, Professor } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
+import { evaluationDeadlineService } from "@/lib/database"
+import type { EvaluationDeadline } from "@/lib/types"
 
 // Declare global variables para sa Google Charts
 declare global {
@@ -103,6 +105,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
   const [googleChartsLoaded, setGoogleChartsLoaded] = useState(false) // Kung na-load na ba ang Google Charts
   const [questionAggregates, setQuestionAggregates] = useState<Record<string, QuestionAggregate>>({}) // Data ng mga question aggregates
   const [selectedSectionFilter, setSelectedSectionFilter] = useState<string>("A. Instructional Competence") // Filter for sections - default to first section
+  const [activeDeadline, setActiveDeadline] = useState<EvaluationDeadline | null>(null) // Evaluation period
 
   // Load Google Charts library para sa paggawa ng charts
   useEffect(() => {
@@ -129,6 +132,19 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
 
     loadGoogleCharts() // Tawagin ang function
   }, []) // I-run lang once kapag na-mount ang component
+
+  // Load evaluation period
+  useEffect(() => {
+    const loadDeadline = async () => {
+      try {
+        const deadline = await evaluationDeadlineService.getActive()
+        setActiveDeadline(deadline)
+      } catch (error) {
+        console.error("Error loading deadline for results:", error)
+      }
+    }
+    loadDeadline()
+  }, [])
 
   // Function para gumawa ng pie chart (bilog na chart)
   const drawPieChartForQuestion = (questionId: string, counts: Record<string, number>, order: string[]) => {
@@ -917,7 +933,22 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                     doc.text("Professor Evaluation Results", 14, 18)
                     doc.setFontSize(11)
                     doc.setFont("helvetica", "normal")
-                    doc.text(profName, 14, 26)
+                    const deptText = professor?.departmentName ? ` - ${professor.departmentName}` : ""
+                    doc.text(`${profName}${deptText}`, 14, 26)
+
+                    // Evaluation Period on the right
+                    if (activeDeadline) {
+                      const startDate = new Date(activeDeadline.startDate)
+                      const endDate = new Date(activeDeadline.endDate)
+                      const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+                      const periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}`
+                      
+                      doc.setFontSize(10)
+                      doc.setTextColor(100, 100, 100)
+                      const textWidth = doc.getTextWidth(periodText)
+                      doc.text(periodText, pageWidth - textWidth - 14, 26)
+                      doc.setTextColor(30, 30, 30) // Reset color
+                    }
 
                     // Group aggregates by section
                     const grouped: Record<string, QuestionAggregate[]> = {}
@@ -999,7 +1030,20 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                     doc.text("OVERALL", 16, y)
                     doc.text(`${overallPct}%`, pageWidth - 28, y)
                     doc.setTextColor(30, 30, 30)
-                    y += 16
+                    y += 15
+
+                    // --- Rating Scale Legend Box ---
+                    doc.setFillColor(245, 247, 249)
+                    doc.setDrawColor(220, 225, 230)
+                    doc.roundedRect(14, y - 5, pageWidth - 28, 10, 1, 1, "FD")
+                    doc.setFontSize(8)
+                    doc.setFont("helvetica", "bold")
+                    doc.setTextColor(70, 80, 90)
+                    doc.text("Rating Scale Reference:", 18, y + 1.5)
+                    doc.setFont("helvetica", "normal")
+                    doc.text("SA: Strongly Agree   |   A: Agree   |   D: Disagree   |   SD: Strongly Disagree", 55, y + 1.5)
+                    doc.setTextColor(30, 30, 30)
+                    y += 15
 
                     // --- Per-section question tables (comments last) ---
                     const orderedSecs = [...sortedSecs.filter(s => !s.toLowerCase().includes("comments")), ...sortedSecs.filter(s => s.toLowerCase().includes("comment"))]

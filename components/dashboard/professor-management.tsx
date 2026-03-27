@@ -23,6 +23,7 @@
 import React, { useState, useMemo, useEffect } from "react" // React hooks para sa state management
 import { Button } from "@/components/ui/button" // Button component
 import { Input } from "@/components/ui/input" // Input field component
+import { Textarea } from "@/components/ui/textarea" // Textarea component
 import { Label } from "@/components/ui/label" // Label component
 import {
   Dialog,
@@ -62,7 +63,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table" // Table components
-import { Plus, Edit, Trash2, Search, Users, Info, MapPin, Mail, Calendar, ArrowLeft, FileSpreadsheet, Eye, X, BookOpen, GraduationCap, CheckCircle2, Circle, Upload, Loader2, Pencil, PlusCircle, Trash } from "lucide-react" // Icons
+import { Plus, Edit, Trash2, Search, Users, Info, MapPin, Mail, Calendar, ArrowLeft, FileSpreadsheet, Eye, X, BookOpen, GraduationCap, CheckCircle2, Circle, Upload, Loader2, Pencil, PlusCircle, Trash, Check, ChevronsUpDown } from "lucide-react" // Icons
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Progress } from "@/components/ui/progress" // Progress bar component
 import { professorService, departmentService } from "@/lib/database" // Database functions
 import { evaluationResultsService } from "@/lib/evaluation-results-service" // Evaluation results service
@@ -72,7 +75,7 @@ import { AdvancedFilters } from "@/components/filters/advanced-filters" // Filte
 import { exportToCSV, exportToPDF, exportToDOCX, type ExportData } from "@/lib/export-utils" // Export functions
 import { useToast } from "@/hooks/use-toast" // Toast notification hook
 import { Toaster } from "@/components/ui/toaster" // Toast component
-import { sanitizeErrorMessage } from "@/lib/utils" // Helper function para sa pag-sanitize ng error messages
+import { sanitizeErrorMessage, cn } from "@/lib/utils" // Helper function para sa pag-sanitize ng error messages
 import type { Professor, Department } from "@/lib/types" // Type definitions
 
 
@@ -148,6 +151,16 @@ export function ProfessorManagement({
   };
 
   // STEP 8: State variables para sa form ng pag-add/edit ng professor
+  const [isAddProfessorDialogOpen, setIsAddProfessorDialogOpen] = useState(false) // Para sa popup ng pag-add ng professor
+  const [addProfessorFormData, setAddProfessorFormData] = useState({
+    name: "", // Pangalan ng professor
+    department: "", // Department ng professor
+    email: "", // Email ng professor
+    password: "", // Password ng professor
+    rows: [{ subject: "", sections: "", course: "" }] // Dynamic rows for subjects/sections/courses
+  })
+
+  // State para sa existing edit (legacy)
   const [formData, setFormData] = useState({
     name: "", // Pangalan ng professor
     email: "", // Email ng professor
@@ -155,6 +168,10 @@ export function ProfessorManagement({
     password: "", // Password ng professor
     status: "active" as "active" | "inactive" | "resigned" | "retired", // Status ng professor
   })
+
+  // States for searchable department dropdowns
+  const [openDeptAdd, setOpenDeptAdd] = useState(false)
+  const [openDeptEdit, setOpenDeptEdit] = useState(false)
 
   const { applyFilters, filters } = useFilters() // Filter functions
   const { toast } = useToast() // Toast notification
@@ -1199,6 +1216,110 @@ export function ProfessorManagement({
     exportToDOCX(exportData) // I-export sa DOCX format
   }
 
+  // STEP 28.5: Handler para sa manual na pag-add ng professor
+  const handleAddProfessorSubmit = async () => {
+    // Validate required fields
+    if (!addProfessorFormData.name || !addProfessorFormData.email || !addProfessorFormData.department || !addProfessorFormData.password) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill out all required fields (Name, Email, Department, and Password).",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Isang simple regex para sa email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(addProfessorFormData.email)) {
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid Gmail address.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (addProfessorFormData.password.length < 6) {
+      toast({
+        title: "Short Password",
+        description: "Password must be at least 6 characters.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsImporting(true)
+    try {
+      // Validate that we have at least one valid row (subject is required)
+      const validRows = addProfessorFormData.rows.filter(row => row.subject.trim() !== "")
+      
+      if (validRows.length === 0) {
+        toast({
+          title: "Missing Subjects",
+          description: "Please add at least one subject and its details.",
+          variant: "destructive",
+        })
+        setIsImporting(false)
+        return
+      }
+
+      const subjectSections = validRows.map(row => ({
+        subject: row.subject.trim(),
+        sections: row.sections.split(/[,]/).map(s => s.trim()).filter(s => s.length > 0),
+        course: row.course.trim()
+      }))
+
+      const subjects = validRows.map(row => row.subject.trim())
+      const handledSectionSummary = validRows.map(row => row.sections.trim()).filter(s => s).join("; ")
+
+      // Prepare professor object (mimic Excel format)
+      const newProfessor = {
+        name: addProfessorFormData.name.trim(),
+        email: addProfessorFormData.email.trim(),
+        departmentName: addProfessorFormData.department,
+        password: addProfessorFormData.password,
+        subjects,
+        subjectSections,
+        handledSection: handledSectionSummary,
+      }
+
+      // Gamitin ang existing import function para i-save (handle single entry)
+      const result = await professorService.importProfessors([newProfessor])
+
+      if (result.success > 0) {
+        toast({
+          title: "Professor Added",
+          description: `Successfully added ${addProfessorFormData.name}.`,
+          variant: "default",
+        })
+        setIsAddProfessorDialogOpen(false)
+        setAddProfessorFormData({
+          name: "",
+          department: "",
+          email: "",
+          password: "",
+          rows: [{ subject: "", sections: "", course: "" }]
+        })
+        if (onRefresh) onRefresh()
+      } else if (result.skipped > 0) {
+        toast({
+          title: "Duplicate Found",
+          description: `Professor with email ${addProfessorFormData.email} already exists.`,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error adding professor:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add professor. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   // STEP 29: Main return statement - dito nagsisimula ang UI
   return (
     <div className="space-y-6">
@@ -1215,6 +1336,227 @@ export function ProfessorManagement({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Add Professor Dialog */}
+          <Dialog open={isAddProfessorDialogOpen} onOpenChange={setIsAddProfessorDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  setAddProfessorFormData({
+                    name: "",
+                    department: "",
+                    email: "",
+                    password: "",
+                    rows: [{ subject: "", sections: "", course: "" }]
+                  })
+                }}
+                variant="outline"
+                size="sm"
+                className="flex-1 sm:flex-none h-8 px-2 sm:px-3 text-[10px] sm:text-xs whitespace-nowrap bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+              >
+                <Plus className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                Add Professor
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add New Professor</DialogTitle>
+                <DialogDescription>
+                  Fill out the form below to manually add a professor. This has the same function as the Excel import.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="name" className="text-right text-xs font-semibold">Fullname</Label>
+                  <Input
+                    id="name"
+                    value={addProfessorFormData.name}
+                    onChange={(e) => setAddProfessorFormData({ ...addProfessorFormData, name: e.target.value })}
+                    placeholder="Enter full name"
+                    className="col-span-3 h-9 text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="department" className="text-right text-xs font-semibold">DEPARTMENT</Label>
+                  <div className="col-span-3">
+                    <Popover open={openDeptAdd} onOpenChange={setOpenDeptAdd}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openDeptAdd}
+                          className="w-full justify-between h-9 text-sm font-normal"
+                        >
+                          {addProfessorFormData.department || "Select or type department"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-full min-w-[300px] p-0" align="start">
+                        <Command>
+                          <CommandInput 
+                            placeholder="Search or type department..." 
+                            value={addProfessorFormData.department}
+                            onValueChange={(value) => setAddProfessorFormData({ ...addProfessorFormData, department: value })}
+                          />
+                          <CommandList>
+                            <CommandEmpty className="p-2 text-xs flex flex-col gap-2">
+                              <span>No existing department found.</span>
+                              <Button 
+                                size="sm" 
+                                variant="secondary" 
+                                className="h-7 text-[10px]"
+                                onClick={() => setOpenDeptAdd(false)}
+                              >
+                                Use "{addProfessorFormData.department}"
+                              </Button>
+                            </CommandEmpty>
+                            <CommandGroup heading="Existing Departments">
+                              {uniqueDepartments.map((deptName) => (
+                                <CommandItem
+                                  key={deptName}
+                                  value={deptName}
+                                  onSelect={(currentValue) => {
+                                    setAddProfessorFormData({ ...addProfessorFormData, department: currentValue })
+                                    setOpenDeptAdd(false)
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      addProfessorFormData.department === deptName ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  {deptName}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+                {/* Dynamic Subject/Section/Course Rows */}
+                <div className="pt-2 border-t mt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <Label className="text-sm font-bold text-blue-700">SUBJECTS & ASSIGNMENTS</Label>
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => {
+                        setAddProfessorFormData({
+                          ...addProfessorFormData,
+                          rows: [...addProfessorFormData.rows, { subject: "", sections: "", course: "" }]
+                        })
+                      }}
+                      className="h-7 text-[10px] sm:text-xs"
+                    >
+                      <PlusCircle className="mr-1 h-3 w-3" />
+                      Add Another Subject
+                    </Button>
+                  </div>
+                  
+                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {addProfessorFormData.rows.map((row, idx) => (
+                      <div key={idx} className="p-3 border rounded-lg bg-gray-50/50 space-y-3 relative group">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Subject Set #{idx + 1}</span>
+                          {addProfessorFormData.rows.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const newRows = addProfessorFormData.rows.filter((_, i) => i !== idx)
+                                setAddProfessorFormData({ ...addProfessorFormData, rows: newRows })
+                              }}
+                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="space-y-1.5">
+                            <Label className="text-[10px] font-semibold uppercase text-gray-500">Subject Name</Label>
+                            <Input
+                              value={row.subject}
+                              onChange={(e) => {
+                                const newRows = [...addProfessorFormData.rows]
+                                newRows[idx].subject = e.target.value
+                                setAddProfessorFormData({ ...addProfessorFormData, rows: newRows })
+                              }}
+                              placeholder="e.g., Database Management"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-semibold uppercase text-gray-500">Handled Section</Label>
+                              <Input
+                                value={row.sections}
+                                onChange={(e) => {
+                                  const newRows = [...addProfessorFormData.rows]
+                                  newRows[idx].sections = e.target.value
+                                  setAddProfessorFormData({ ...addProfessorFormData, rows: newRows })
+                                }}
+                                placeholder="e.g., 1A, 2B"
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-[10px] font-semibold uppercase text-gray-500">Course Handle</Label>
+                              <Input
+                                value={row.course}
+                                onChange={(e) => {
+                                  const newRows = [...addProfessorFormData.rows]
+                                  newRows[idx].course = e.target.value
+                                  setAddProfessorFormData({ ...addProfessorFormData, rows: newRows })
+                                }}
+                                placeholder="e.g., BSIT"
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="email" className="text-right text-xs font-semibold">GMAIL</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={addProfessorFormData.email}
+                    onChange={(e) => setAddProfessorFormData({ ...addProfessorFormData, email: e.target.value })}
+                    placeholder="email@gmail.com"
+                    className="col-span-3 h-9 text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="pass" className="text-right text-xs font-semibold">PASSWORD</Label>
+                  <Input
+                    id="pass"
+                    type="password"
+                    value={addProfessorFormData.password}
+                    onChange={(e) => setAddProfessorFormData({ ...addProfessorFormData, password: e.target.value })}
+                    placeholder="At least 6 characters"
+                    className="col-span-3 h-9 text-sm"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddProfessorDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddProfessorSubmit} disabled={isImporting}>
+                  {isImporting ? "Saving..." : "Save Professor"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Import Excel Dialog */}
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
@@ -2162,12 +2504,61 @@ export function ProfessorManagement({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-department">Department</Label>
-              <Input
-                id="edit-department"
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                placeholder="Computer Science"
-              />
+              <Popover open={openDeptEdit} onOpenChange={setOpenDeptEdit}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openDeptEdit}
+                    className="w-full justify-between h-10 text-sm font-normal"
+                  >
+                    {formData.department || "Select or type department"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full min-w-[300px] p-0" align="start">
+                  <Command>
+                    <CommandInput 
+                      placeholder="Search or type department..." 
+                      value={formData.department}
+                      onValueChange={(value) => setFormData({ ...formData, department: value })}
+                    />
+                    <CommandList>
+                      <CommandEmpty className="p-2 text-xs flex flex-col gap-2">
+                        <span>No existing department found.</span>
+                        <Button 
+                          size="sm" 
+                          variant="secondary" 
+                          className="h-7 text-[10px]"
+                          onClick={() => setOpenDeptEdit(false)}
+                        >
+                          Use "{formData.department}"
+                        </Button>
+                      </CommandEmpty>
+                      <CommandGroup heading="Existing Departments">
+                        {uniqueDepartments.map((deptName) => (
+                          <CommandItem
+                            key={deptName}
+                            value={deptName}
+                            onSelect={(currentValue) => {
+                              setFormData({ ...formData, department: currentValue })
+                              setOpenDeptEdit(false)
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                formData.department === deptName ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {deptName}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-password">Password (Leave blank to keep current)</Label>

@@ -311,6 +311,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
 
   // States for add/edit dialogs
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [excelFile, setExcelFile] = useState<File | null>(null)
@@ -345,6 +346,18 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     subject: "",
     status: "",
     accountStatus: "",
+  })
+
+  // Form data specifically for Adding a Student manually
+  const [studentFormData, setStudentFormData] = useState({
+    fullName: "",
+    section: "",
+    yearLevel: "",
+    course: "", // BS Accountancy / Department
+    subjects: [""], // Enrolled Subjects array for dynamic inputs
+    email: "", // GMAIL
+    password: "",
+    status: "Regular", // REGULAR OR IRREGULAR
   })
 
   // Prevent body scroll when preview popup is open
@@ -788,6 +801,96 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
     }
   }
 
+  // Handle single student creation from dialog
+  const handleAddStudent = async () => {
+    // Validation
+    if (!studentFormData.fullName || !studentFormData.email || !studentFormData.password || !studentFormData.course) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsImporting(true)
+    try {
+      // Split name parts (lastName, firstName) or (firstName lastName)
+      const nameParts = studentFormData.fullName.trim().split(/\s+/)
+      let firstName = ""
+      let lastName = ""
+      let suffix = ""
+
+      if (nameParts.length >= 2) {
+        // Basic split: last element as last name, rest as first name
+        // Handle common suffixes
+        const suffixes = ["Jr.", "Sr.", "III", "IV", "V", "II", "Jr", "Sr"]
+        if (suffixes.includes(nameParts[nameParts.length - 1])) {
+          suffix = nameParts.pop() || ""
+          lastName = nameParts.pop() || ""
+          firstName = nameParts.join(" ")
+        } else {
+          lastName = nameParts.pop() || ""
+          firstName = nameParts.join(" ")
+        }
+      } else {
+        firstName = nameParts[0]
+        lastName = " - " // Fallback for single names
+      }
+
+      // Extract studentId from email
+      const studentId = studentFormData.email.split('@')[0] || `STU-${Date.now()}`
+
+      // Filter and clean subjects
+      const subjectsArray = studentFormData.subjects
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+
+      // Use studentService to create the record in Firestore
+      const resId = await studentService.create(
+        firstName,
+        lastName,
+        suffix,
+        studentId,
+        studentFormData.email,
+        studentFormData.password,
+        studentFormData.yearLevel,
+        studentFormData.course,
+        studentFormData.section,
+        undefined, // single subject (legacy)
+        studentFormData.status,
+        "active",
+        subjectsArray
+      )
+
+      toast({
+        title: "Student Created",
+        description: `${studentFormData.fullName} has been successfully added.`,
+      })
+
+      // Reset and close
+      setStudentFormData({
+        fullName: "",
+        section: "",
+        yearLevel: "",
+        course: "",
+        subjects: [""],
+        email: "",
+        password: "",
+        status: "Regular",
+      })
+      setIsAddStudentDialogOpen(false)
+    } catch (error: any) {
+      toast({
+        title: "Creation Failed",
+        description: sanitizeErrorMessage(error),
+        variant: "destructive",
+      })
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   // FUNCTION PARA SA PAG-EDIT NG STUDENT
   const handleEditStudent = async () => {
     // Validation: Checking kung kumpleto ang datos
@@ -1118,6 +1221,161 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                       Import Students
                     </>
                   )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full sm:w-auto text-sm bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Student
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add New Student Record</DialogTitle>
+                <DialogDescription>
+                  Enter the student's information manually. All fields are required.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-1 gap-2">
+                  <Label htmlFor="manual-fullName">Full Name</Label>
+                  <Input
+                    id="manual-fullName"
+                    placeholder="Juan Dela Cruz Jr."
+                    value={studentFormData.fullName}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, fullName: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-email">GMAIL (Email)</Label>
+                    <Input
+                      id="manual-email"
+                      type="email"
+                      placeholder="student@gmail.com"
+                      value={studentFormData.email}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-password">Password</Label>
+                    <Input
+                      id="manual-password"
+                      type="text"
+                      placeholder="Enter password"
+                      value={studentFormData.password}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, password: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-section">Section</Label>
+                    <Input
+                      id="manual-section"
+                      placeholder="BSCS-4A"
+                      value={studentFormData.section}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, section: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-yearLevel">Year Level</Label>
+                    <Select value={studentFormData.yearLevel} onValueChange={(v) => setStudentFormData({ ...studentFormData, yearLevel: v })}>
+                      <SelectTrigger id="manual-yearLevel">
+                        <SelectValue placeholder="Select Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1st Year">1st Year</SelectItem>
+                        <SelectItem value="2nd Year">2nd Year</SelectItem>
+                        <SelectItem value="3rd Year">3rd Year</SelectItem>
+                        <SelectItem value="4th Year">4th Year</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="manual-course">Department / Course</Label>
+                  <Input
+                    id="manual-course"
+                    placeholder="e.g. BS Accountancy"
+                    value={studentFormData.course}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, course: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="manual-subjects">Enrolled Subjects</Label>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        const newSubjects = [...studentFormData.subjects, ""]
+                        setStudentFormData({...studentFormData, subjects: newSubjects})
+                      }}
+                      className="h-7 px-2 text-primary hover:bg-primary/10"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add Subject
+                    </Button>
+                  </div>
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {studentFormData.subjects.map((subject, index) => (
+                      <div key={index} className="flex gap-2">
+                        <Input
+                          placeholder={`Subject ${index + 1}`}
+                          value={subject}
+                          onChange={(e) => {
+                            const newSubjects = [...studentFormData.subjects]
+                            newSubjects[index] = e.target.value
+                            setStudentFormData({...studentFormData, subjects: newSubjects})
+                          }}
+                          className="h-9"
+                        />
+                        {studentFormData.subjects.length > 1 && (
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => {
+                              const newSubjects = studentFormData.subjects.filter((_, i) => i !== index)
+                              setStudentFormData({...studentFormData, subjects: newSubjects})
+                            }}
+                            className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="manual-status">Regular or Irregular</Label>
+                  <Select value={studentFormData.status} onValueChange={(v) => setStudentFormData({ ...studentFormData, status: v })}>
+                    <SelectTrigger id="manual-status">
+                      <SelectValue placeholder="Select Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Regular">Regular</SelectItem>
+                      <SelectItem value="Irregular">Irregular</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddStudentDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddStudent} disabled={isImporting}>
+                  {isImporting ? "Creating..." : "Add Student"}
                 </Button>
               </DialogFooter>
             </DialogContent>
