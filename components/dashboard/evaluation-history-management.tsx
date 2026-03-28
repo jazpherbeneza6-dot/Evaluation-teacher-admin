@@ -26,8 +26,10 @@ import {
     Loader2,
     Trash2,
     AlertCircle,
-    Search
+    Search,
+    FileDown
 } from "lucide-react"
+import jsPDF from "jspdf"
 
 import { evaluationHistoryService, type HistoryByYear, type EvaluationHistoryEntry } from "@/lib/evaluation-history-service"
 import type { EvaluationQuestion, Professor } from "@/lib/types"
@@ -448,6 +450,285 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         chart.draw(data, options)
     }
 
+    // Helper function to generate PDF content for a single professor
+    const generatePDFContent = (doc: jsPDF, profName: string, deptName: string, aggs: QuestionAggregate[], period: EvaluationHistoryEntry | null) => {
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const pageHeight = doc.internal.pageSize.getHeight()
+
+        // Helper: truncate text
+        const truncateText = (text: string, maxWidth: number): string => {
+            if (doc.getTextWidth(text) <= maxWidth) return text
+            let t = text
+            while (t.length > 0 && doc.getTextWidth(t + "...") > maxWidth) {
+                t = t.slice(0, -1)
+            }
+            return t + "..."
+        }
+
+        // Title
+        doc.setFontSize(16)
+        doc.setFont("helvetica", "bold")
+        doc.text("Professor Evaluation Results (Archived)", 14, 18)
+        doc.setFontSize(11)
+        doc.setFont("helvetica", "normal")
+        const deptSuffix = deptName ? ` - ${deptName}` : ""
+        doc.text(`${profName}${deptSuffix}`, 14, 26)
+
+        // Evaluation Period on the right
+        if (period) {
+            const startDate = new Date(period.startDate)
+            const endDate = new Date(period.endDate)
+            const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+            const periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}`
+
+            doc.setFontSize(10)
+            doc.setTextColor(100, 100, 100)
+            const textWidth = doc.getTextWidth(periodText)
+            doc.text(periodText, pageWidth - textWidth - 14, 26)
+            doc.setTextColor(30, 30, 30) // Reset color
+        }
+
+        // Group aggregates by section
+        const grouped: Record<string, QuestionAggregate[]> = {}
+        aggs.forEach(q => {
+            const section = q.section || "Other"
+            if (!grouped[section]) grouped[section] = []
+            grouped[section].push(q)
+        })
+
+        // Sort sections
+        const sortedSecs = Object.keys(grouped).sort((a, b) => {
+            const ai = SECTION_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase())
+            const bi = SECTION_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase())
+            if (ai === -1 && bi === -1) return 0
+            if (ai === -1) return 1
+            if (bi === -1) return -1
+            return ai - bi
+        })
+
+        // --- Overall Performance Summary Table ---
+        let y = 36
+        doc.setFontSize(12)
+        doc.setFont("helvetica", "bold")
+        doc.text("Overall Performance Summary", 14, y)
+        y += 8
+
+        // Table header
+        doc.setFillColor(55, 65, 81)
+        doc.rect(14, y - 5, pageWidth - 28, 8, "F")
+        doc.setFontSize(9)
+        doc.setTextColor(255, 255, 255)
+        doc.text("Section", 16, y)
+        doc.text("Score", pageWidth - 28, y)
+        y += 6
+
+        doc.setTextColor(30, 30, 30)
+        doc.setFont("helvetica", "normal")
+        let grandPositive = 0
+        let grandTotal = 0
+
+        sortedSecs.forEach((sec, idx) => {
+            const secQuestions = grouped[sec]
+            // Skip Comments
+            if (sec.toLowerCase().includes("comment")) return
+
+            let secPositive = 0
+            let secTotal = 0
+            secQuestions.forEach(q => {
+                if (q.questionType !== "text") {
+                    const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
+                    const opts = q.options || Object.keys(q.counts)
+                    secPositive += (q.counts[opts[0]] || 0) + (q.counts[opts[1]] || 0)
+                    secTotal += total
+                }
+            })
+            grandPositive += secPositive
+            grandTotal += secTotal
+            const pct = secTotal > 0 ? Math.round((secPositive / secTotal) * 100) : 0
+
+            if (idx % 2 === 0) {
+                doc.setFillColor(248, 248, 248)
+                doc.rect(14, y - 5, pageWidth - 28, 8, "F")
+            }
+
+            const cleanName = sec.replace(/^[A-F]\.\s*/, "")
+            doc.text(truncateText(cleanName, pageWidth - 50), 16, y)
+            doc.setFont("helvetica", "bold")
+            doc.text(`${pct}%`, pageWidth - 28, y)
+            doc.setFont("helvetica", "normal")
+            y += 8
+        })
+
+        // Overall row
+        const overallPct = grandTotal > 0 ? Math.round((grandPositive / grandTotal) * 100) : 0
+        doc.setFillColor(55, 65, 81)
+        doc.rect(14, y - 5, pageWidth - 28, 9, "F")
+        doc.setTextColor(255, 255, 255)
+        doc.setFont("helvetica", "bold")
+        doc.text("OVERALL", 16, y)
+        doc.text(`${overallPct}%`, pageWidth - 28, y)
+        doc.setTextColor(30, 30, 30)
+        y += 15
+
+        // --- Rating Scale Legend Box ---
+        doc.setFillColor(245, 247, 249)
+        doc.setDrawColor(220, 225, 230)
+        doc.roundedRect(14, y - 5, pageWidth - 28, 10, 1, 1, "FD")
+        doc.setFontSize(8)
+        doc.setFont("helvetica", "bold")
+        doc.setTextColor(70, 80, 90)
+        doc.text("Rating Scale Reference:", 18, y + 1.5)
+        doc.setFont("helvetica", "normal")
+        doc.text("SA: Strongly Agree   |   A: Agree   |   D: Disagree   |   SD: Strongly Disagree", 55, y + 1.5)
+        doc.setTextColor(30, 30, 30)
+        y += 15
+
+        // --- Per-section question tables (comments last) ---
+        const orderedSecs = [...sortedSecs.filter(s => !s.toLowerCase().includes("comments")), ...sortedSecs.filter(s => s.toLowerCase().includes("comment"))]
+        orderedSecs.forEach(sec => {
+            const secQuestions = grouped[sec]
+            const cleanName = sec.replace(/^[A-F]\.\s*/, "")
+            const isVerbal = sec.toLowerCase().includes("comments")
+
+            // Page break
+            if (y > pageHeight - 50) {
+                doc.addPage()
+                y = 18
+            }
+
+            // Section title
+            doc.setFontSize(11)
+            doc.setFont("helvetica", "bold")
+            doc.text(cleanName, 14, y)
+            y += 8
+
+            if (isVerbal) {
+                // For Comment, list text responses
+                doc.setFontSize(9)
+                doc.setFont("helvetica", "normal")
+                secQuestions.forEach(q => {
+                    doc.setFont("helvetica", "bold")
+                    const lines = doc.splitTextToSize(q.questionText, pageWidth - 30)
+                    lines.forEach((line: string) => {
+                        if (y > pageHeight - 15) { doc.addPage(); y = 18 }
+                        doc.text(line, 16, y)
+                        y += 5
+                    })
+                    doc.setFont("helvetica", "normal")
+                    if (q.textResponses && q.textResponses.length > 0) {
+                        q.textResponses.forEach((txt, i) => {
+                            if (y > pageHeight - 15) { doc.addPage(); y = 18 }
+                            const respLines = doc.splitTextToSize(`${i + 1}. ${txt}`, pageWidth - 36)
+                            respLines.forEach((line: string) => {
+                                if (y > pageHeight - 15) { doc.addPage(); y = 18 }
+                                doc.text(line, 20, y)
+                                y += 5
+                            })
+                        })
+                    } else {
+                        doc.text("No text responses.", 20, y)
+                        y += 5
+                    }
+                    y += 4
+                })
+            } else {
+                // Likert questions table
+                // Get option headers from the first question
+                const optHeaders = secQuestions[0]?.options || Object.keys(secQuestions[0]?.counts || {})
+
+                // Table header
+                doc.setFillColor(55, 65, 81)
+                const headerH = 8
+                doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
+                doc.setFontSize(8)
+                doc.setTextColor(255, 255, 255)
+                doc.setFont("helvetica", "bold")
+                doc.text("#", 16, y)
+                doc.text("Question", 24, y)
+                // Option columns
+                const optStartX = pageWidth - 28 - (optHeaders.length * 22)
+                optHeaders.forEach((opt, oi) => {
+                    const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
+                    doc.text(label, optStartX + (oi * 22), y)
+                })
+                doc.text("Total", pageWidth - 28, y)
+                y += 6
+
+                doc.setTextColor(30, 30, 30)
+                doc.setFont("helvetica", "normal")
+
+                secQuestions.forEach((q, qi) => {
+                    if (q.questionType === "text") return
+
+                    doc.setFontSize(8)
+                    const maxQWidth = optStartX - 28
+                    const qLines = doc.splitTextToSize(q.questionText, maxQWidth)
+                    const lineH = 4.5
+                    const rowH = Math.max(8, qLines.length * lineH + 3)
+
+                    // Check if row fits on page, if not add new page with header
+                    if (y + rowH - 5 > pageHeight - 15) {
+                        doc.addPage()
+                        y = 18
+                        doc.setFillColor(55, 65, 81)
+                        doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
+                        doc.setFontSize(8)
+                        doc.setTextColor(255, 255, 255)
+                        doc.setFont("helvetica", "bold")
+                        doc.text("#", 16, y)
+                        doc.text("Question", 24, y)
+                        optHeaders.forEach((opt, oi) => {
+                            const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
+                            doc.text(label, optStartX + (oi * 22), y)
+                        })
+                        doc.text("Total", pageWidth - 28, y)
+                        doc.setTextColor(30, 30, 30)
+                        doc.setFont("helvetica", "normal")
+                        y += 6
+                    }
+
+                    // Alternate row background
+                    if (qi % 2 === 0) {
+                        doc.setFillColor(248, 248, 248)
+                        doc.rect(14, y - 5, pageWidth - 28, rowH, "F")
+                    }
+
+                    doc.setFontSize(8)
+                    doc.text(`${qi + 1}`, 16, y)
+                    // Print each line of the question text
+                    qLines.forEach((line: string, li: number) => {
+                        doc.text(line, 24, y + (li * lineH))
+                    })
+
+                    const opts = q.options || Object.keys(q.counts)
+                    const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
+                    opts.forEach((opt, oi) => {
+                        const count = q.counts[opt] || 0
+                        doc.text(`${count}`, optStartX + (oi * 22), y)
+                    })
+                    doc.text(`${total}`, pageWidth - 28, y)
+                    y += rowH
+                })
+            }
+            y += 8
+        })
+    }
+
+    // PDF Export Function
+    const handleExportPDF = () => {
+        const aggs = Object.values(questionAggregates)
+        if (aggs.length === 0) return
+
+        const profName = selectedProfessorData?.professorName || "Professor"
+        const deptName = selectedProfessorData?.departmentName || ""
+
+        const doc = new jsPDF({ orientation: "portrait" })
+        generatePDFContent(doc, profName, deptName, aggs, selectedPeriod)
+        
+        const safeName = profName.replace(/[^a-zA-Z0-9]/g, "_")
+        doc.save(`History_${safeName}_evaluation_results.pdf`)
+    }
+
     // Format date range
     const formatDateRange = (startDate: Date, endDate: Date) => {
         const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
@@ -862,10 +1143,17 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                     {selectedProfessorData.evaluationCount} evaluation{selectedProfessorData.evaluationCount !== 1 ? 's' : ''}
                                                 </Badge>
                                             </div>
-
                                         </div>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={handleExportPDF}
+                                            className="h-9 gap-2 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all shadow-sm"
+                                        >
+                                            <FileDown className="h-4 w-4" />
+                                            <span className="font-semibold">Export PDF</span>
+                                        </Button>
                                     </div>
-
 
                                     {/* Section filter tabs */}
                                     <div className="flex flex-wrap gap-2 p-1 bg-muted/30 rounded-lg">
@@ -1035,7 +1323,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                             </CardContent>
                                                         </Card>
                                                     ))
-                                                })()}
+                                               })()}
                                             </div>
                                         </div>
                                     </div>

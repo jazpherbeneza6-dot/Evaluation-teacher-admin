@@ -50,11 +50,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Plus, Edit, Trash2, Users, UserPlus, Search, X, Upload, FileSpreadsheet, Eye, Trash, PlusCircle, ChevronLeft, ChevronRight, ClipboardList, CheckCircle2, Clock } from "lucide-react"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Plus, Edit, Trash2, Users, UserPlus, Search, X, Upload, FileSpreadsheet, Eye, Trash, PlusCircle, ChevronLeft, ChevronRight, ClipboardList, CheckCircle2, Clock, Check, ChevronsUpDown } from "lucide-react"
 import { studentService, professorService } from "@/lib/database"
 import { useToast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
-import { sanitizeErrorMessage } from "@/lib/utils"
+import { sanitizeErrorMessage, cn } from "@/lib/utils"
 import React from "react"
 import { parseExcelStudents, type ParsedStudent } from "@/lib/excel-parser"
 import { evaluationResultsService } from "@/lib/evaluation-results-service"
@@ -322,6 +323,8 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
   const [newStudents, setNewStudents] = useState<ParsedStudent[]>([]) // New students (non-duplicates)
   const [duplicateStudents, setDuplicateStudents] = useState<ParsedStudent[]>([]) // Duplicate students
   const [editingSubjects, setEditingSubjects] = useState<string[]>(['']) // For dynamic subject editing
+  const [openCourseAdd, setOpenCourseAdd] = useState(false)
+  const [openCourseEdit, setOpenCourseEdit] = useState(false)
 
   const [isEvalProgressDialogOpen, setIsEvalProgressDialogOpen] = useState(false)
   const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<Student | null>(null)
@@ -1111,6 +1114,210 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
           <p className="text-xs sm:text-sm md:text-base text-muted-foreground">Manage student accounts and access to evaluations</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full sm:w-auto text-sm bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Add Student
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add New Student Record</DialogTitle>
+                <DialogDescription>
+                  Enter the student's information manually. All fields are required.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-1 gap-2">
+                  <Label htmlFor="manual-fullName">Full Name</Label>
+                  <Input
+                    id="manual-fullName"
+                    placeholder="Juan Dela Cruz Jr."
+                    value={studentFormData.fullName}
+                    onChange={(e) => setStudentFormData({ ...studentFormData, fullName: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-email">GMAIL (Email)</Label>
+                    <Input
+                      id="manual-email"
+                      type="email"
+                      placeholder="student@gmail.com"
+                      value={studentFormData.email}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-password">Password</Label>
+                    <Input
+                      id="manual-password"
+                      type="password"
+                      placeholder="Enter password"
+                      value={studentFormData.password}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, password: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-section">Section</Label>
+                    <Input
+                      id="manual-section"
+                      placeholder="BSCS-4A"
+                      value={studentFormData.section}
+                      onChange={(e) => setStudentFormData({ ...studentFormData, section: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="manual-yearLevel">Year Level</Label>
+                    <Select value={studentFormData.yearLevel} onValueChange={(v) => setStudentFormData({ ...studentFormData, yearLevel: v })}>
+                      <SelectTrigger id="manual-yearLevel">
+                        <SelectValue placeholder="Select Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1st Year">1st Year</SelectItem>
+                        <SelectItem value="2nd Year">2nd Year</SelectItem>
+                        <SelectItem value="3rd Year">3rd Year</SelectItem>
+                        <SelectItem value="4th Year">4th Year</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                          <div className="grid gap-2">
+                  <Label htmlFor="manual-course">Enrolled Course</Label>
+                  <Popover open={openCourseAdd} onOpenChange={setOpenCourseAdd}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={openCourseAdd}
+                        className="w-full justify-between h-9 text-sm font-normal"
+                      >
+                        {studentFormData.course || "Select or type course"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full min-w-[300px] p-0" align="start">
+                      <Command>
+                        <CommandInput 
+                          placeholder="Search or type course..." 
+                          value={studentFormData.course}
+                          onValueChange={(value) => setStudentFormData({ ...studentFormData, course: value })}
+                        />
+                        <CommandList>
+                          <CommandEmpty className="p-2 text-xs flex flex-col gap-2">
+                            <span>No course found.</span>
+                            <Button 
+                              variant="secondary" 
+                              size="sm" 
+                              className="h-7 text-[10px]"
+                              onClick={() => setOpenCourseAdd(false)}
+                            >
+                              Add as new course
+                            </Button>
+                          </CommandEmpty>
+                          <CommandGroup heading="Existing Courses">
+                            {uniqueCourses.map((course) => (
+                              <CommandItem
+                                key={course}
+                                value={course}
+                                onSelect={(currentValue) => {
+                                  setStudentFormData({ ...studentFormData, course: currentValue })
+                                  setOpenCourseAdd(false)
+                                }}
+                                className="text-sm"
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    studentFormData.course === course ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {course}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="manual-subjects">Enrolled Subjects</Label>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        const newSubjects = [...studentFormData.subjects, ""]
+                        setStudentFormData({...studentFormData, subjects: newSubjects})
+                      }}
+                      className="h-7 px-2 text-primary hover:bg-primary/10"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add Subject
+                    </Button>
+                  </div>
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                    {studentFormData.subjects.map((subject, index) => (
+                      <div key={index} className="flex gap-2">
+                        <Input
+                          placeholder={`Subject ${index + 1}`}
+                          value={subject}
+                          onChange={(e) => {
+                            const newSubjects = [...studentFormData.subjects]
+                            newSubjects[index] = e.target.value
+                            setStudentFormData({...studentFormData, subjects: newSubjects})
+                          }}
+                          className="h-9"
+                        />
+                        {studentFormData.subjects.length > 1 && (
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => {
+                              const newSubjects = studentFormData.subjects.filter((_, i) => i !== index)
+                              setStudentFormData({...studentFormData, subjects: newSubjects})
+                            }}
+                            className="h-9 w-9 text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="manual-status">Regular or Irregular</Label>
+                  <Select value={studentFormData.status} onValueChange={(v) => setStudentFormData({ ...studentFormData, status: v })}>
+                    <SelectTrigger id="manual-status">
+                      <SelectValue placeholder="Select Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Regular">Regular</SelectItem>
+                      <SelectItem value="Irregular">Irregular</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddStudentDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddStudent} disabled={isImporting}>
+                  {isImporting ? "Creating..." : "Add Student"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => {
@@ -1221,161 +1428,6 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                       Import Students
                     </>
                   )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="w-full sm:w-auto text-sm bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary">
-                <UserPlus className="mr-2 h-4 w-4" />
-                Add Student
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Add New Student Record</DialogTitle>
-                <DialogDescription>
-                  Enter the student's information manually. All fields are required.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-1 gap-2">
-                  <Label htmlFor="manual-fullName">Full Name</Label>
-                  <Input
-                    id="manual-fullName"
-                    placeholder="Juan Dela Cruz Jr."
-                    value={studentFormData.fullName}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, fullName: e.target.value })}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="manual-email">GMAIL (Email)</Label>
-                    <Input
-                      id="manual-email"
-                      type="email"
-                      placeholder="student@gmail.com"
-                      value={studentFormData.email}
-                      onChange={(e) => setStudentFormData({ ...studentFormData, email: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="manual-password">Password</Label>
-                    <Input
-                      id="manual-password"
-                      type="text"
-                      placeholder="Enter password"
-                      value={studentFormData.password}
-                      onChange={(e) => setStudentFormData({ ...studentFormData, password: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="manual-section">Section</Label>
-                    <Input
-                      id="manual-section"
-                      placeholder="BSCS-4A"
-                      value={studentFormData.section}
-                      onChange={(e) => setStudentFormData({ ...studentFormData, section: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="manual-yearLevel">Year Level</Label>
-                    <Select value={studentFormData.yearLevel} onValueChange={(v) => setStudentFormData({ ...studentFormData, yearLevel: v })}>
-                      <SelectTrigger id="manual-yearLevel">
-                        <SelectValue placeholder="Select Year" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1st Year">1st Year</SelectItem>
-                        <SelectItem value="2nd Year">2nd Year</SelectItem>
-                        <SelectItem value="3rd Year">3rd Year</SelectItem>
-                        <SelectItem value="4th Year">4th Year</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="manual-course">Department / Course</Label>
-                  <Input
-                    id="manual-course"
-                    placeholder="e.g. BS Accountancy"
-                    value={studentFormData.course}
-                    onChange={(e) => setStudentFormData({ ...studentFormData, course: e.target.value })}
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <Label htmlFor="manual-subjects">Enrolled Subjects</Label>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => {
-                        const newSubjects = [...studentFormData.subjects, ""]
-                        setStudentFormData({...studentFormData, subjects: newSubjects})
-                      }}
-                      className="h-7 px-2 text-primary hover:bg-primary/10"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add Subject
-                    </Button>
-                  </div>
-                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                    {studentFormData.subjects.map((subject, index) => (
-                      <div key={index} className="flex gap-2">
-                        <Input
-                          placeholder={`Subject ${index + 1}`}
-                          value={subject}
-                          onChange={(e) => {
-                            const newSubjects = [...studentFormData.subjects]
-                            newSubjects[index] = e.target.value
-                            setStudentFormData({...studentFormData, subjects: newSubjects})
-                          }}
-                          className="h-9"
-                        />
-                        {studentFormData.subjects.length > 1 && (
-                          <Button 
-                            type="button" 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => {
-                              const newSubjects = studentFormData.subjects.filter((_, i) => i !== index)
-                              setStudentFormData({...studentFormData, subjects: newSubjects})
-                            }}
-                            className="h-9 w-9 text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="manual-status">Regular or Irregular</Label>
-                  <Select value={studentFormData.status} onValueChange={(v) => setStudentFormData({ ...studentFormData, status: v })}>
-                    <SelectTrigger id="manual-status">
-                      <SelectValue placeholder="Select Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Regular">Regular</SelectItem>
-                      <SelectItem value="Irregular">Irregular</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddStudentDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddStudent} disabled={isImporting}>
-                  {isImporting ? "Creating..." : "Add Student"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1694,7 +1746,7 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
                 </div>
 
                 <div className="w-full sm:w-[180px]">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Course</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 px-1 mb-2 block">Enrolled Course</Label>
                   <Select value={selectedCourse} onValueChange={setSelectedCourse}>
                     <SelectTrigger className="rounded-xl h-11 bg-background border-border shadow-sm hover:border-primary/40 hover:bg-accent/5 transition-all font-medium">
                       <SelectValue placeholder="All Courses" />
@@ -2125,12 +2177,63 @@ export function StudentManagement({ onRefresh }: StudentManagementProps) {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-course">Course</Label>
-              <Input
-                id="edit-course"
-                value={formData.course}
-                onChange={(e) => setFormData({ ...formData, course: e.target.value })}
-              />
+              <Label htmlFor="edit-course">Enrolled Course</Label>
+              <Popover open={openCourseEdit} onOpenChange={setOpenCourseEdit}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={openCourseEdit}
+                    className="w-full justify-between h-10 text-sm font-normal"
+                  >
+                    {formData.course || "Select or type course"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full min-w-[300px] p-0" align="start">
+                  <Command>
+                    <CommandInput 
+                      placeholder="Search or type course..." 
+                      value={formData.course}
+                      onValueChange={(value) => setFormData({ ...formData, course: value })}
+                    />
+                    <CommandList>
+                      <CommandEmpty className="p-2 text-xs flex flex-col gap-2">
+                        <span>No course found.</span>
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          className="h-7 text-[10px]"
+                          onClick={() => setOpenCourseEdit(false)}
+                        >
+                          Add as new course
+                        </Button>
+                      </CommandEmpty>
+                      <CommandGroup heading="Existing Courses">
+                        {uniqueCourses.map((course) => (
+                          <CommandItem
+                            key={course}
+                            value={course}
+                            onSelect={(currentValue) => {
+                              setFormData({ ...formData, course: currentValue })
+                              setOpenCourseEdit(false)
+                            }}
+                            className="text-sm"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                formData.course === course ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {course}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-section">Section</Label>

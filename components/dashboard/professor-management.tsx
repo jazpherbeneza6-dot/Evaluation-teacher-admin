@@ -63,7 +63,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table" // Table components
-import { Plus, Edit, Trash2, Search, Users, Info, MapPin, Mail, Calendar, ArrowLeft, FileSpreadsheet, Eye, X, BookOpen, GraduationCap, CheckCircle2, Circle, Upload, Loader2, Pencil, PlusCircle, Trash, Check, ChevronsUpDown } from "lucide-react" // Icons
+import { Plus, Edit, Trash2, Search, Users, UserPlus, Info, MapPin, Mail, Calendar, ArrowLeft, FileSpreadsheet, Eye, X, BookOpen, GraduationCap, CheckCircle2, Circle, Upload, Loader2, Pencil, PlusCircle, Trash, Check, ChevronsUpDown } from "lucide-react" // Icons
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Progress } from "@/components/ui/progress" // Progress bar component
@@ -1324,7 +1324,7 @@ export function ProfessorManagement({
   return (
     <div className="space-y-6">
       {/* STEP 30: Header section - title at add button */}
-      <div className="flex items-center justify-between gap-2 sm:gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="text-lg md:text-xl lg:text-3xl font-bold text-gray-900 truncate">
             {selectedDepartmentView ? `${selectedDepartmentView} Professors` : "Professor Management"}
@@ -1335,7 +1335,7 @@ export function ProfessorManagement({
               : "Select a faculty to view professors"}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto items-start sm:items-center">
           {/* Add Professor Dialog */}
           <Dialog open={isAddProfessorDialogOpen} onOpenChange={setIsAddProfessorDialogOpen}>
             <DialogTrigger asChild>
@@ -1350,10 +1350,9 @@ export function ProfessorManagement({
                   })
                 }}
                 variant="outline"
-                size="sm"
-                className="flex-1 sm:flex-none h-8 px-2 sm:px-3 text-[10px] sm:text-xs whitespace-nowrap bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                className="w-full sm:w-auto text-sm bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary"
               >
-                <Plus className="mr-1 h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <UserPlus className="mr-2 h-4 w-4" />
                 Add Professor
               </Button>
             </DialogTrigger>
@@ -1567,10 +1566,9 @@ export function ProfessorManagement({
                   setPreviewErrors([])
                   setProfessorsBySection({})
                 }}
-                size="sm"
-                className="flex-1 sm:flex-none h-8 px-2 sm:px-3 text-[10px] sm:text-xs whitespace-nowrap"
+                className="w-full sm:w-auto text-sm"
               >
-                <Upload className="mr-1.5 h-3 w-3 sm:mr-2 sm:h-3.5 sm:w-3.5" />
+                <Upload className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 Import Excel
               </Button>
             </DialogTrigger>
