@@ -161,7 +161,7 @@ export function DashboardSidebar({ activeView, onViewChange, isMobileOpen, onMob
   return (
     <>
       {/* Desktop Sidebar - Hidden on mobile */}
-      <aside className="hidden lg:flex w-72 border-r border-border/50 bg-card/50 backdrop-blur-sm flex-shrink-0">
+      <aside className="hidden lg:flex w-72 border-r border-border/50 bg-card/50 backdrop-blur-sm flex-shrink-0 sticky top-14 sm:top-16 md:top-20 z-40 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] md:h-[calc(100vh-5rem)] overflow-y-auto">
         <SidebarContent activeView={activeView} onViewChange={onViewChange} />
       </aside>
 
