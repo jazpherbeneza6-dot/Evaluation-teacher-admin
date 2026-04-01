@@ -194,10 +194,10 @@ export function SettingsManagement() {
                     <User className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
-                    <h4 className="font-semibold text-sm line-clamp-1">{username}</h4>
+                    <h4 className="font-semibold text-sm line-clamp-1">Change Username</h4>
                     <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider italic">Administrator</p>
                   </div>
-                  <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => { resetDialogStates(); setNewValue(username); setIsProfileDialogOpen(true); }}>
+                  <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => { resetDialogStates(); setNewValue(""); setIsProfileDialogOpen(true); }}>
                     Change Username
                   </Button>
                 </div>

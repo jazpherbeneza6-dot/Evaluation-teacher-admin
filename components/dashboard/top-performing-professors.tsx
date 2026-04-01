@@ -56,9 +56,9 @@ export function TopPerformingProfessors() {
   const categories = [
     { key: "Instructional Competence", label: "Instructional Competence" },
     { key: "Classroom Management", label: "Classroom Management" },
-    { key: "Research", label: "Research" },
     { key: "Student Support & Development", label: "Student Support & Development" },
     { key: "Professionalism & Personal Qualities", label: "Professionalism & Personal Qualities" },
+    { key: "Research", label: "Research" },
   ]
 
   // Fetch initial data immediately, then set up real-time listener

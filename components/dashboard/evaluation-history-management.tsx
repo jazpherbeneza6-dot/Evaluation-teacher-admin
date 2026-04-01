@@ -10,11 +10,20 @@
  * 4. Individual results with charts
  */
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import {
     FolderOpen,
@@ -27,11 +36,20 @@ import {
     Trash2,
     AlertCircle,
     Search,
-    FileDown
+    FileDown,
+    Trophy,
+    Award,
+    Star,
+    TrendingUp,
+    MoreHorizontal,
+    ArrowUpDown,
+    FileText,
+    Folder
 } from "lucide-react"
 import jsPDF from "jspdf"
 
 import { evaluationHistoryService, type HistoryByYear, type EvaluationHistoryEntry } from "@/lib/evaluation-history-service"
+import { evaluationResultsService, type TopProfessorData } from "@/lib/evaluation-results-service"
 import type { EvaluationQuestion, Professor } from "@/lib/types"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -117,7 +135,7 @@ const SECTION_COLORS: Record<string, { bg: string; border: string; text: string 
 }
 
 // Navigation levels
-type ViewLevel = "years" | "periods" | "departments" | "professors" | "results"
+type ViewLevel = "years" | "history-type-selection" | "periods" | "departments" | "professors" | "results" | "performance-rankings"
 
 interface EvaluationHistoryManagementProps {
     questions: EvaluationQuestion[]
@@ -157,6 +175,11 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
     const [yearsSearch, setYearsSearch] = useState("")
     const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null)
     const [departmentsSearch, setDepartmentsSearch] = useState("")
+    const [historyType, setHistoryType] = useState<"evaluation" | "performance" | null>(null)
+    const [performanceSearch, setPerformanceSearch] = useState("")
+    const [performanceSortBy, setPerformanceSortBy] = useState<"score" | "name" | "department">("score")
+    const [performanceSortOrder, setPerformanceSortOrder] = useState<"asc" | "desc">("desc")
+    const [performanceCategory, setPerformanceCategory] = useState<string>("Instructional Competence")
 
     // Load history data
     useEffect(() => {
@@ -232,17 +255,28 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
     // Handle year selection
     const handleYearClick = (year: number) => {
         setSelectedYear(year)
+        setViewLevel("history-type-selection")
+    }
+
+    // Handle history type selection
+    const handleHistoryTypeSelect = (type: "evaluation" | "performance") => {
+        setHistoryType(type)
         setViewLevel("periods")
     }
 
-    // Handle period selection - now goes to departments first
+    // Handle period selection
     const handlePeriodClick = async (periodId: string) => {
         setSelectedPeriodId(periodId)
         setIsLoading(true)
         try {
             const periodData = await evaluationHistoryService.getHistoryById(periodId)
             setSelectedPeriod(periodData)
-            setViewLevel("departments")  // Changed to departments
+            
+            if (historyType === "performance") {
+                setViewLevel("performance-rankings")
+            } else {
+                setViewLevel("departments")
+            }
         } catch (error) {
             console.error("Error loading period:", error)
             toast({
@@ -283,9 +317,17 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
             setSelectedPeriodId(null)
             setDepartmentsSearch("")  // Reset departments search
             setViewLevel("periods")
+        } else if (viewLevel === "performance-rankings") {
+            setSelectedPeriod(null)
+            setSelectedPeriodId(null)
+            setPerformanceSearch("")
+            setViewLevel("periods")
         } else if (viewLevel === "periods") {
-            setSelectedYear(null)
+            setHistoryType(null)
             setPeriodsSearch("")  // Reset periods search
+            setViewLevel("history-type-selection")
+        } else if (viewLevel === "history-type-selection") {
+            setSelectedYear(null)
             setViewLevel("years")
         }
     }
@@ -729,6 +771,277 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         doc.save(`History_${safeName}_evaluation_results.pdf`)
     }
 
+    // Batch Export PDF for Performance Rankings
+    const handleExportAllPDF = () => {
+        if (!selectedPeriod) return
+
+        const flattenedEvaluations = selectedPeriod.professorEvaluations.flatMap(p => p.evaluations)
+        const allByCat = evaluationResultsService.calculateTopPerformingProfessorsByCategory(
+            flattenedEvaluations,
+            questions,
+            999
+        )
+
+        const doc = new jsPDF({ orientation: "landscape" })
+        const pageWidth = doc.internal.pageSize.getWidth()
+        const pageHeight = doc.internal.pageSize.getHeight()
+
+        // Helper: truncate text
+        const truncateText = (text: string, maxWidth: number): string => {
+            if (doc.getTextWidth(text) <= maxWidth) return text
+            let truncated = text
+            while (truncated.length > 0 && doc.getTextWidth(truncated + "...") > maxWidth) {
+                truncated = truncated.slice(0, -1)
+            }
+            return truncated + "..."
+        }
+
+        // Main Title
+        doc.setFontSize(16)
+        doc.setFont("helvetica", "bold")
+        doc.text(`All Professors Performance Rankings (Archived)`, 14, 18)
+        doc.setFontSize(10)
+        doc.setFont("helvetica", "normal")
+        doc.setTextColor(120, 120, 120)
+        doc.text(`Period: ${formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}`, 14, 26)
+        doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 32)
+
+        const cats = performanceCategories.map(cat => ({ key: cat, label: cat }))
+        const isGrouped = performanceSortBy === "department"
+        
+        const colX_grouped = [14, 30, 190, 240]
+        const colWidths_grouped = [14, 150, 48, 40]
+        const colHeaders_grouped = ["Rank", "Professor", "Performance", "Score"]
+
+        const colX_flat = [14, 30, 110, 190, 240]
+        const colWidths_flat = [14, 75, 75, 48, 40]
+        const colHeaders_flat = ["Rank", "Professor", "Dept", "Performance", "Score"]
+
+        const colX = isGrouped ? colX_grouped : colX_flat
+        const colWidths = isGrouped ? colWidths_grouped : colWidths_flat
+        const colHeaders = isGrouped ? colHeaders_grouped : colHeaders_flat
+        const rowHeight = 8
+
+        let y = 44
+        let isFirstCategory = true
+
+        cats.forEach((category) => {
+            const categoryProfessors = allByCat[category.key] || []
+            if (categoryProfessors.length === 0) return
+
+            // Sort category professors by score for global ranks
+            const globalSorted = [...categoryProfessors].sort((a, b) => {
+                const scoreDiff = b.performanceScore - a.performanceScore
+                if (scoreDiff !== 0) return scoreDiff
+                return a.professorName.localeCompare(b.professorName)
+            })
+
+            const rankMap = new Map<string, number>()
+            globalSorted.forEach((p, i) => rankMap.set(p.professorId, i + 1))
+
+            // New page if needed for category header
+            if (!isFirstCategory && y > pageHeight - 50) {
+                doc.addPage()
+                y = 20
+            }
+
+            // Category header
+            if (!isFirstCategory) y += 8
+            doc.setFontSize(14)
+            doc.setFont("helvetica", "bold")
+            doc.setTextColor(15, 23, 42) 
+            doc.text(category.label, 14, y)
+            y += 4
+            doc.setDrawColor(30, 80, 160)
+            doc.setLineWidth(1)
+            doc.line(14, y, pageWidth - 14, y)
+            y += 12
+
+            let isHeaderOnPage = false
+
+            if (isGrouped) {
+                // GROUPED BY DEPARTMENT
+                const groups: { [dept: string]: TopProfessorData[] } = {}
+                categoryProfessors.forEach(p => {
+                    const dept = p.departmentName || "General"
+                    if (!groups[dept]) groups[dept] = []
+                    groups[dept].push(p)
+                })
+
+                const sortedDepts = Object.keys(groups).sort((a, b) => {
+                    const minRankA = Math.min(...groups[a].map(p => rankMap.get(p.professorId) || 999))
+                    const minRankB = Math.min(...groups[b].map(p => rankMap.get(p.professorId) || 999))
+                    return minRankA - minRankB
+                })
+
+                sortedDepts.forEach((dept) => {
+                    const deptProfs = [...groups[dept]].sort((a, b) => b.performanceScore - a.performanceScore)
+                    
+                    if (y > pageHeight - 35) {
+                        doc.addPage()
+                        y = 20
+                        isHeaderOnPage = false
+                    }
+
+                    // Dept divider - Blue theme matching screenshot
+                    doc.setFillColor(239, 246, 255) // Blue-50
+                    doc.rect(12, y - 5, pageWidth - 24, 7, "F")
+                    doc.setFontSize(8)
+                    doc.setFont("helvetica", "bold")
+                    doc.setTextColor(30, 64, 175) // Blue-800
+                    doc.text(`DEPARTMENT: ${dept.toUpperCase()}`, 14, y)
+                    y += 10
+
+                    deptProfs.forEach((professor, idx) => {
+                        if (y > pageHeight - 20) {
+                            doc.addPage()
+                            y = 20
+                            isHeaderOnPage = false
+                        }
+
+                        if (!isHeaderOnPage) {
+                            doc.setFillColor(243, 244, 246) // Gray-100
+                            doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
+                            doc.setFontSize(8)
+                            doc.setFont("helvetica", "bold")
+                            doc.setTextColor(107, 114, 128) // Gray-500
+                            colHeaders.forEach((header, i) => doc.text(header.toUpperCase(), colX[i], y))
+                            y += rowHeight + 2
+                            isHeaderOnPage = true
+                        }
+
+                        if (idx % 2 !== 0) {
+                            doc.setFillColor(252, 253, 254)
+                            doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+                        }
+
+                        doc.setFont("helvetica", "normal").setTextColor(55, 65, 81).setFontSize(10)
+                        const rank = rankMap.get(professor.professorId) || 0
+                        doc.text(`${rank}`, colX[0], y)
+                        doc.setTextColor(17, 24, 39).text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
+                        
+                        const label = getPerformanceLabel(professor.performanceScore)
+                        // Dynamic label colors
+                        if (label === "Excellent") doc.setTextColor(22, 163, 74) // Green-600
+                        else if (label === "Very Good") doc.setTextColor(37, 99, 235) // Blue-600
+                        else if (label === "Good") doc.setTextColor(217, 119, 6) // Amber-600
+                        else doc.setTextColor(220, 38, 38) // Red-600
+                        
+                        doc.text(label, colX[2], y)
+                        
+                        doc.setTextColor(17, 24, 39).setFont("helvetica", "bold")
+                        doc.text(`${professor.performanceScore}%`, colX[3], y)
+                        doc.setFont("helvetica", "normal")
+                        y += rowHeight
+                    })
+                    y += 4
+                })
+            } else {
+                // FLAT LIST
+                globalSorted.forEach((professor, index) => {
+                    if (y > pageHeight - 20) {
+                        doc.addPage()
+                        y = 20
+                        isHeaderOnPage = false
+                    }
+
+                    if (!isHeaderOnPage) {
+                        doc.setFillColor(241, 245, 249)
+                        doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
+                        doc.setFontSize(9)
+                        doc.setFont("helvetica", "bold")
+                        doc.setTextColor(71, 85, 105)
+                        colHeaders.forEach((header, i) => doc.text(header.toUpperCase(), colX[i], y))
+                        y += rowHeight + 2
+                        isHeaderOnPage = true
+                    }
+
+                    if (index % 2 !== 0) {
+                        doc.setFillColor(248, 250, 252)
+                        doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
+                    }
+
+                    doc.setFont("helvetica", "normal").setTextColor(15, 23, 42).setFontSize(10)
+                    const rank = rankMap.get(professor.professorId) || 0
+                    doc.text(`${rank}`, colX[0], y)
+                    doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
+                    doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
+
+                    const label = getPerformanceLabel(professor.performanceScore)
+                    doc.text(label, colX[3], y)
+                    doc.setFont("helvetica", "bold")
+                    doc.text(`${professor.performanceScore}%`, colX[4], y)
+                    doc.setFont("helvetica", "normal")
+                    y += rowHeight
+                })
+            }
+
+            y += 2
+            doc.setFontSize(8)
+            doc.setTextColor(100, 116, 139)
+            doc.text(`${categoryProfessors.length} professor${categoryProfessors.length !== 1 ? "s" : ""} in ${category.label}`, 14, y)
+            y += 12
+
+            isFirstCategory = false
+        })
+
+        doc.save(`Performance_Rankings_${new Date().toISOString().split('T')[0]}.pdf`)
+    }
+
+    // Helper functions for performance rankings
+    const getRankBadgeColor = (index: number) => {
+        switch (index) {
+            case 0:
+                return "bg-black text-white shadow-sm"
+            case 1:
+                return "bg-[#FF6B00] text-white shadow-sm"
+            case 2:
+                return "bg-[#00CBA9] text-white shadow-sm"
+            default:
+                return "bg-[#F3F4F6] text-[#374151] shadow-sm"
+        }
+    }
+
+    const getPerformanceColor = (score: number) => {
+        if (score >= 90) return "text-green-600"
+        if (score >= 80) return "text-primary"
+        if (score >= 70) return "text-amber-600"
+        if (score >= 60) return "text-orange-600"
+        return "text-destructive"
+    }
+
+    const getProgressBarColor = (score: number) => {
+        if (score >= 90) return "bg-[#647C3E]" // Dark Green from image
+        if (score >= 80) return "bg-[#00D261]" // Bright Green from image
+        if (score >= 70) return "bg-amber-500"
+        if (score >= 60) return "bg-orange-600"
+        return "bg-destructive"
+    }
+
+    const getPerformanceBadgeStyle = (score: number) => {
+        if (score >= 90) return "bg-orange-50 text-orange-600 border-none"
+        if (score >= 80) return "bg-gray-100 text-gray-600 border-none"
+        if (score >= 70) return "bg-amber-50 text-amber-600 border-none"
+        return "bg-red-50 text-red-600 border-none"
+    }
+
+    const getPerformanceLabel = (score: number) => {
+        if (score >= 90) return "Excellent"
+        if (score >= 80) return "Very Good"
+        if (score >= 70) return "Good"
+        if (score >= 60) return "Satisfactory"
+        if (score > 0) return "Needs Improvement"
+        return "No Data"
+    }
+
+    const performanceCategories = [
+        "Instructional Competence",
+        "Classroom Management",
+        "Student Support & Development",
+        "Professionalism & Personal Qualities",
+        "Research",
+    ]
+
     // Format date range
     const formatDateRange = (startDate: Date, endDate: Date) => {
         const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
@@ -752,7 +1065,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         { gradient: "from-green-500/10 via-green-400/5", border: "border-green-500/30", hoverBorder: "hover:border-green-500", iconBg: "bg-green-100", textColor: "text-green-700" },
         { gradient: "from-purple-500/10 via-purple-400/5", border: "border-purple-500/30", hoverBorder: "hover:border-purple-500", iconBg: "bg-purple-100", textColor: "text-purple-700" },
         { gradient: "from-pink-500/10 via-pink-400/5", border: "border-pink-500/30", hoverBorder: "hover:border-pink-500", iconBg: "bg-pink-100", textColor: "text-pink-700" },
-    ]
+    ];
 
     return (
         <div className="space-y-4 sm:space-y-6">
@@ -783,21 +1096,37 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                 Back
                             </Button>
                             <div className="flex items-center text-sm text-muted-foreground">
-                                <span className="hover:text-foreground cursor-pointer" onClick={() => { setViewLevel("years"); setSelectedYear(null); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
+                                <span className="hover:text-foreground cursor-pointer" onClick={() => { setViewLevel("years"); setSelectedYear(null); setHistoryType(null); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
                                     History
                                 </span>
                                 {selectedYear && (
                                     <>
                                         <ChevronRight className="h-4 w-4 mx-1" />
-                                        <span className={viewLevel === "periods" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { if (viewLevel !== "periods") { setViewLevel("periods"); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); } }}>
+                                        <span className={viewLevel === "history-type-selection" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { setViewLevel("history-type-selection"); setHistoryType(null); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
                                             {selectedYear}
+                                        </span>
+                                    </>
+                                )}
+                                {historyType && (
+                                    <>
+                                        <ChevronRight className="h-4 w-4 mx-1" />
+                                        <span className={viewLevel === "periods" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { setViewLevel("periods"); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
+                                            {historyType === "performance" ? "Performance" : "Evaluations"}
                                         </span>
                                     </>
                                 )}
                                 {selectedPeriod && (
                                     <>
                                         <ChevronRight className="h-4 w-4 mx-1" />
-                                        <span className={viewLevel === "departments" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { if (viewLevel !== "departments") { setViewLevel("departments"); setSelectedDepartment(null); setSelectedProfessorId(null); } }}>
+                                        <span className={viewLevel === "departments" || viewLevel === "performance-rankings" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { 
+                                            if (historyType === "performance") {
+                                                setViewLevel("performance-rankings");
+                                            } else {
+                                                setViewLevel("departments");
+                                                setSelectedDepartment(null);
+                                                setSelectedProfessorId(null);
+                                            }
+                                        }}>
                                             {formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}
                                         </span>
                                     </>
@@ -822,21 +1151,21 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                         </div>
                     )}
 
-                    {/* Content based on view level */}
-                    <div className="space-y-6">
                         {/* LEVEL 1: Years */}
                         {viewLevel === "years" && (
                             <>
-                                {/* Header with search bar */}
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                                     <div className="flex items-center gap-2">
-                                        <FolderOpen className="h-5 w-5 text-orange-500" />
-                                        <h3 className="font-semibold text-lg">Evaluation History</h3>
-                                        <Badge variant="secondary">{historyByYears.length} year{historyByYears.length !== 1 ? 's' : ''}</Badge>
+                                        <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
+                                            <Calendar className="h-5 w-5 text-blue-600" />
+                                        </div>
+                                        <div>
+                                            <CardTitle className="text-xl font-bold text-gray-900">Evaluation Library</CardTitle>
+                                            <CardDescription>Select a year to view archived evaluations</CardDescription>
+                                        </div>
                                     </div>
-                                    {/* Search bar */}
                                     <div className="relative w-full sm:w-64">
-                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                         <Input
                                             placeholder="Search years..."
                                             value={yearsSearch}
@@ -846,67 +1175,106 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                     </div>
                                 </div>
 
-                                {historyByYears.length === 0 ? (
-                                    <div className="text-center py-12 bg-muted/30 rounded-xl border-2 border-dashed">
-                                        <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <FolderOpen className="h-10 w-10 text-muted-foreground" />
-                                        </div>
-                                        <p className="text-foreground font-semibold text-lg">No History Yet</p>
-                                        <p className="text-muted-foreground text-sm mt-2">
-                                            Evaluation history will appear here after deadline updates
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                        {historyByYears.filter(yearData => {
-                                            if (!yearsSearch) return true
-                                            return yearData.year.toString().includes(yearsSearch)
-                                        }).map((yearData, index) => {
+                                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                                    {historyByYears.filter(y => {
+                                        if (!yearsSearch) return true
+                                        return y.year.toString().includes(yearsSearch)
+                                    }).map((yearData, index) => {
+                                        const colors = colorSchemes[index % colorSchemes.length]
+                                        return (
+                                            <Card
+                                                key={yearData.year}
+                                                className={`group cursor-pointer transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder} bg-gradient-to-br ${colors.gradient} hover:shadow-lg hover:scale-[1.02] relative overflow-hidden h-40`}
+                                                onClick={() => handleYearClick(yearData.year)}
+                                            >
+                                                <div className="p-5 flex flex-col items-center justify-center text-center h-full relative z-10">
+                                                    <div className={`w-14 h-14 rounded-2xl ${colors.iconBg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+                                                        <FolderOpen className={`h-8 w-8 ${colors.textColor}`} />
+                                                    </div>
+                                                    <h3 className={`text-xl font-bold ${colors.textColor}`}>{yearData.year}</h3>
+                                                    <p className="text-xs text-muted-foreground mt-1">{yearData.periods.length} Evaluation Periods</p>
+                                                </div>
+                                            </Card>
+                                        )
+                                    })}
+                                </div>
+                            </>
+                        )}
 
-                                            const colors = colorSchemes[index % colorSchemes.length]
-                                            const totalEvals = yearData.periods.reduce((sum, p) => sum + p.totalEvaluations, 0)
-                                            return (
-                                                <Card
-                                                    key={yearData.year}
-                                                    className={`cursor-pointer transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder} bg-gradient-to-br ${colors.gradient} group hover:shadow-xl hover:scale-[1.02]`}
-                                                    onClick={() => handleYearClick(yearData.year)}
-                                                >
-                                                    <CardContent className="p-6">
-                                                        <div className="flex flex-col items-center text-center space-y-4">
-                                                            <div className={`w-20 h-20 rounded-2xl ${colors.iconBg} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
-                                                                <FolderOpen className={`h-10 w-10 ${colors.textColor}`} />
-                                                            </div>
-                                                            <div>
-                                                                <h3 className="font-bold text-2xl text-foreground">{yearData.year}</h3>
-                                                                <div className="flex items-center justify-center gap-2 mt-2">
-                                                                    <Badge variant="secondary" className="text-xs">
-                                                                        {yearData.periods.length} period{yearData.periods.length !== 1 ? 's' : ''}
-                                                                    </Badge>
-                                                                    <Badge variant="outline" className="text-xs">
-                                                                        {totalEvals} evaluation{totalEvals !== 1 ? 's' : ''}
-                                                                    </Badge>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            )
-                                        })}
+                        {/* LEVEL 1.5: History Type Selection */}
+                        {viewLevel === "history-type-selection" && (
+                            <>
+                                <div className="flex items-center gap-2 mb-8">
+                                    <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
+                                        <Calendar className="h-5 w-5 text-blue-600" />
                                     </div>
-                                )}
+                                    <div>
+                                        <CardTitle className="text-xl font-bold text-gray-900">Archives for {selectedYear}</CardTitle>
+                                        <CardDescription>Choose how you want to browse the archived data</CardDescription>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-8 sm:grid-cols-2 max-w-4xl mx-auto px-4">
+                                    <Card
+                                        className="group cursor-pointer transition-all duration-500 border-2 border-blue-100 hover:border-blue-500 bg-white hover:shadow-2xl hover:scale-[1.03] relative overflow-hidden flex flex-col items-center text-center p-8 group"
+                                        onClick={() => handleHistoryTypeSelect("evaluation")}
+                                    >
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-10 -mt-10 group-hover:bg-blue-100 transition-colors" />
+                                        <div className="w-24 h-24 rounded-3xl bg-blue-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 shadow-sm border border-blue-100">
+                                            <FolderOpen className="h-12 w-12 text-blue-600" />
+                                        </div>
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-3 group-hover:text-blue-600 transition-colors">Evaluation History</h3>
+                                        <p className="text-muted-foreground text-sm leading-relaxed max-w-[240px]">
+                                            Browse through detailed evaluation periods, departments, and individual professor performance results.
+                                        </p>
+                                        <div className="mt-8 flex items-center gap-2 text-blue-600 font-semibold opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                                            <span>Open Archive</span>
+                                            <ChevronRight className="h-4 w-4" />
+                                        </div>
+                                    </Card>
+
+                                    <Card
+                                        className="group cursor-pointer transition-all duration-500 border-2 border-purple-100 hover:border-purple-500 bg-white hover:shadow-2xl hover:scale-[1.03] relative overflow-hidden flex flex-col items-center text-center p-8"
+                                        onClick={() => handleHistoryTypeSelect("performance")}
+                                    >
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 group-hover:bg-purple-100 transition-colors" />
+                                        <div className="w-24 h-24 rounded-3xl bg-purple-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-500 shadow-sm border border-purple-100">
+                                            <TrendingUp className="h-12 w-12 text-purple-600" />
+                                        </div>
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-3 group-hover:text-purple-600 transition-colors">Performance History</h3>
+                                        <p className="text-muted-foreground text-sm leading-relaxed max-w-[240px]">
+                                            View summarized performance rankings, top performing professors, and historical trends for this year.
+                                        </p>
+                                        <div className="mt-8 flex items-center gap-2 text-purple-600 font-semibold opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                                            <span>View Rankings</span>
+                                            <ChevronRight className="h-4 w-4" />
+                                        </div>
+                                    </Card>
+                                </div>
                             </>
                         )}
 
                         {/* LEVEL 2: Periods */}
                         {viewLevel === "periods" && (
                             <>
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                                     <div className="flex items-center gap-2">
-                                        <Calendar className="h-5 w-5 text-blue-500" />
-                                        <h3 className="font-semibold text-lg">Evaluation Periods in {selectedYear}</h3>
-                                        <Badge variant="secondary">{periodsForYear.length} period{periodsForYear.length !== 1 ? 's' : ''}</Badge>
+                                        <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100">
+                                            {historyType === "performance" ? (
+                                                <TrendingUp className="h-5 w-5 text-indigo-600" />
+                                            ) : (
+                                                <Calendar className="h-5 w-5 text-indigo-600" />
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <CardTitle className="text-xl font-bold text-gray-900">
+                                                {historyType === "performance" ? "Performance Dates" : "Evaluation Periods"} in {selectedYear}
+                                            </CardTitle>
+                                            <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
+                                                {periodsForYear.length} {historyType === "performance" ? "dates" : "periods"}
+                                            </Badge>
+                                        </div>
                                     </div>
-                                    {/* Search bar */}
                                     <div className="relative w-full sm:w-64">
                                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                         <Input
@@ -923,37 +1291,46 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                         const dateStr = `${period.startDate.toLocaleDateString()} - ${period.endDate.toLocaleDateString()}`
                                         return dateStr.toLowerCase().includes(periodsSearch.toLowerCase())
                                     }).map((period, index) => {
+                                        const isPerformance = historyType === "performance"
+                                        const palette = [
+                                            { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
+                                            { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
+                                            { bg: "bg-purple-50/50", border: "border-purple-200", icon: "bg-purple-100 text-purple-600", chevron: "text-purple-400" },
+                                            { bg: "bg-pink-50/50", border: "border-pink-200", icon: "bg-pink-100 text-pink-600", chevron: "text-pink-400" },
+                                            { bg: "bg-amber-50/50", border: "border-amber-200", icon: "bg-amber-100 text-amber-600", chevron: "text-amber-400" },
+                                            { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
+                                        ]
+                                        const color = palette[index % palette.length]
+                                        const icon = isPerformance ? <TrendingUp className="h-6 w-6" /> : <Calendar className="h-6 w-6" />
 
-                                        const colors = colorSchemes[(index + 1) % colorSchemes.length]
                                         return (
                                             <Card
                                                 key={period.id}
-                                                className={`cursor-pointer transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder} bg-gradient-to-br ${colors.gradient} group hover:shadow-lg`}
+                                                className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
                                                 onClick={() => handlePeriodClick(period.id)}
                                             >
-                                                <CardContent className="p-5">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className={`w-14 h-14 rounded-xl ${colors.iconBg} flex items-center justify-center shadow group-hover:scale-105 transition-transform`}>
-                                                                <Calendar className={`h-7 w-7 ${colors.textColor}`} />
-                                                            </div>
-                                                            <div>
-                                                                <h4 className="font-semibold text-foreground">
-                                                                    {formatDateRange(period.startDate, period.endDate)}
-                                                                </h4>
-                                                                <div className="flex items-center gap-2 mt-1">
-                                                                    <Badge variant="secondary" className="text-xs">
-                                                                        <Users className="h-3 w-3 mr-1" />
-                                                                        {period.professorCount} professor{period.professorCount !== 1 ? 's' : ''}
-                                                                    </Badge>
-                                                                    <Badge variant="outline" className="text-xs">
-                                                                        {period.totalEvaluations} eval{period.totalEvaluations !== 1 ? 's' : ''}
-                                                                    </Badge>
-                                                                </div>
+                                                <CardContent className="p-4 sm:p-5 flex items-center justify-between">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className={`w-12 h-12 rounded-xl ${color.icon} flex items-center justify-center transition-colors shadow-sm`}>
+                                                            {icon}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors">
+                                                                {period.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {period.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                            </h4>
+                                                            <div className="flex items-center gap-2 mt-1.5">
+                                                                <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-1 rounded-lg border border-gray-100 shadow-sm">
+                                                                    <Users className="h-3 w-3" />
+                                                                    {period.professorCount} professor{period.professorCount !== 1 ? 's' : ''}
+                                                                </span>
+                                                                <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-1 rounded-lg border border-gray-100 shadow-sm">
+                                                                    <FileText className="h-3 w-3" />
+                                                                    {period.totalEvaluations} eval{period.totalEvaluations !== 1 ? 's' : ''}
+                                                                </span>
                                                             </div>
                                                         </div>
-                                                        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
                                                     </div>
+                                                    <ChevronRight className={`h-5 w-5 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
                                                 </CardContent>
                                             </Card>
                                         )
@@ -962,77 +1339,419 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                             </>
                         )}
 
-                        {/* LEVEL 3: Departments */}
-                        {viewLevel === "departments" && (
+                        {/* LEVEL 2.5: Performance Rankings */}
+                        {viewLevel === "performance-rankings" && selectedPeriod && (
                             <>
-                                {isLoading ? (
-                                    <div className="flex items-center justify-center py-8">
-                                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                        <span className="ml-2 text-muted-foreground">Loading departments...</span>
+                                <div className="flex flex-col gap-6 mb-6">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border border-purple-100 shadow-sm">
+                                                <TrendingUp className="h-6 w-6 text-purple-600" />
+                                            </div>
+                                            <div>
+                                                <CardTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
+                                                    Performance Rankings
+                                                </CardTitle>
+                                                <CardDescription className="flex items-center gap-1.5 mt-0.5">
+                                                    <Calendar className="h-3.5 w-3.5" />
+                                                    {formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}
+                                                </CardDescription>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-10 gap-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all shadow-sm font-semibold"
+                                            onClick={handleExportAllPDF}
+                                        >
+                                            <FileDown className="h-4 w-4" />
+                                            Export All PDF
+                                        </Button>
                                     </div>
-                                ) : (
-                                    <>
-                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                                            <div className="flex items-center gap-2">
-                                                <FolderOpen className="h-5 w-5 text-purple-500" />
-                                                <h3 className="font-semibold text-lg">Departments</h3>
-                                                <Badge variant="secondary">{departmentsForPeriod.length} department{departmentsForPeriod.length !== 1 ? 's' : ''}</Badge>
-                                            </div>
-                                            {/* Search bar */}
-                                            <div className="relative w-full sm:w-64">
-                                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                <Input
-                                                    placeholder="Search departments..."
-                                                    value={departmentsSearch}
-                                                    onChange={(e) => setDepartmentsSearch(e.target.value)}
-                                                    className="pl-9 h-9"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                            {departmentsForPeriod.filter(dept => {
-                                                if (!departmentsSearch) return true
-                                                return dept.toLowerCase().includes(departmentsSearch.toLowerCase())
-                                            }).map((dept, index) => {
-                                                const colors = colorSchemes[(index + 2) % colorSchemes.length]
-                                                const professorsInDept = (selectedPeriod?.professorEvaluations || []).filter(p => p.departmentName === dept)
-                                                const totalEvals = professorsInDept.reduce((sum, p) => sum + p.evaluationCount, 0)
-                                                return (
-                                                    <Card
-                                                        key={dept}
-                                                        className={`cursor-pointer transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder} bg-gradient-to-br ${colors.gradient} group hover:shadow-lg`}
-                                                        onClick={() => handleDepartmentClick(dept)}
+
+                                    {/* Category Tabs */}
+                                    <div className="bg-muted/30 p-1.5 rounded-xl">
+                                        <Tabs value={performanceCategory} onValueChange={setPerformanceCategory} className="w-full">
+                                            <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-auto gap-1.5 bg-transparent p-0">
+                                                {performanceCategories.map((cat) => (
+                                                    <TabsTrigger
+                                                        key={cat}
+                                                        value={cat}
+                                                        className="text-[11px] sm:text-xs py-3 px-2 font-medium data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-md rounded-lg transition-all border border-transparent data-[state=active]:border-primary/10 whitespace-normal text-center min-h-[44px]"
                                                     >
-                                                        <CardContent className="p-5">
-                                                            <div className="flex items-center justify-between">
-                                                                <div className="flex items-center gap-4">
-                                                                    <div className={`w-14 h-14 rounded-xl ${colors.iconBg} flex items-center justify-center shadow group-hover:scale-105 transition-transform`}>
-                                                                        <FolderOpen className={`h-7 w-7 ${colors.textColor}`} />
-                                                                    </div>
-                                                                    <div>
-                                                                        <h4 className="font-semibold text-foreground">
-                                                                            {dept}
-                                                                        </h4>
-                                                                        <div className="flex items-center gap-2 mt-1">
-                                                                            <Badge variant="secondary" className="text-xs">
-                                                                                <Users className="h-3 w-3 mr-1" />
-                                                                                {professorsInDept.length} professor{professorsInDept.length !== 1 ? 's' : ''}
-                                                                            </Badge>
-                                                                            <Badge variant="outline" className="text-xs">
-                                                                                {totalEvals} eval{totalEvals !== 1 ? 's' : ''}
-                                                                            </Badge>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
-                                                            </div>
-                                                        </CardContent>
-                                                    </Card>
-                                                )
-                                            })}
+                                                        {cat}
+                                                    </TabsTrigger>
+                                                ))}
+                                            </TabsList>
+                                        </Tabs>
+                                    </div>
+
+                                    {/* Search & Sort Controls */}
+                                    <div className="flex flex-col sm:flex-row gap-4">
+                                        <div className="flex-1 relative group">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-glow-primary transition-colors" />
+                                            <Input
+                                                placeholder="Search by professor or dept..."
+                                                value={performanceSearch}
+                                                onChange={(e) => setPerformanceSearch(e.target.value)}
+                                                className="pl-9 h-11 border-2 focus-visible:ring-0 focus-visible:border-primary/50 transition-all rounded-xl bg-white/50"
+                                            />
                                         </div>
-                                    </>
-                                )}
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant={performanceSortBy === "score" ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => {
+                                                    if (performanceSortBy === "score") {
+                                                        setPerformanceSortOrder(performanceSortOrder === "asc" ? "desc" : "asc")
+                                                    } else {
+                                                        setPerformanceSortBy("score")
+                                                        setPerformanceSortOrder("desc")
+                                                    }
+                                                }}
+                                                className="h-11 px-4 gap-2 rounded-xl transition-all shadow-sm"
+                                            >
+                                                <ArrowUpDown className="h-4 w-4" />
+                                                Score {performanceSortBy === "score" && (performanceSortOrder === "desc" ? "↓" : "↑")}
+                                            </Button>
+                                            <Button
+                                                variant={performanceSortBy === "department" ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => {
+                                                    if (performanceSortBy === "department") {
+                                                        setPerformanceSortOrder(performanceSortOrder === "asc" ? "desc" : "asc")
+                                                    } else {
+                                                        setPerformanceSortBy("department")
+                                                        setPerformanceSortOrder("desc")
+                                                    }
+                                                }}
+                                                className="h-11 px-4 gap-2 rounded-xl transition-all shadow-sm"
+                                            >
+                                                <ArrowUpDown className="h-4 w-4" />
+                                                Dept {performanceSortBy === "department" && (performanceSortOrder === "desc" ? "↓" : "↑")}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="border border-gray-100 rounded-lg overflow-hidden bg-white shadow-sm relative">
+                                    <div className="overflow-x-auto">
+                                        <Table>
+                                            <TableHeader className="bg-white border-b border-gray-100">
+                                                <TableRow className="hover:bg-transparent">
+                                                    <TableHead className="w-[60px] text-[11px] font-semibold text-gray-500 py-3 px-4">Rank</TableHead>
+                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4">Professor</TableHead>
+                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4">Dept</TableHead>
+                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4 text-center">Performance</TableHead>
+                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4 text-center">Score</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {(() => {
+                                                    const flattenedEvaluations = selectedPeriod.professorEvaluations.flatMap(p => p.evaluations)
+                                                    const rankingsByCategory = evaluationResultsService.calculateTopPerformingProfessorsByCategory(
+                                                        flattenedEvaluations,
+                                                        questions,
+                                                        999
+                                                    )
+                                                    const categoryData = rankingsByCategory[performanceCategory] || []
+                                                    let filtered = [...categoryData]
+                                                    if (performanceSearch) {
+                                                        const term = performanceSearch.toLowerCase()
+                                                        filtered = filtered.filter(p => 
+                                                            p.professorName.toLowerCase().includes(term) || 
+                                                            p.departmentName.toLowerCase().includes(term)
+                                                        )
+                                                    }
+
+                                                    // Prepare global rank map based on score with name as tie-breaker
+                                                    const globalSorted = [...categoryData].sort((a, b) => {
+                                                        const scoreDiff = b.performanceScore - a.performanceScore
+                                                        if (scoreDiff !== 0) return scoreDiff
+                                                        return a.professorName.localeCompare(b.professorName)
+                                                    })
+                                                    const rankMap = new Map<string, number>()
+                                                    globalSorted.forEach((p, i) => rankMap.set(p.professorId, i + 1))
+
+                                                    // CONDITIONAL RENDERING: Grouped vs Flat
+                                                    if (performanceSortBy === "department") {
+                                                        // Group by department
+                                                        const groups: { [dept: string]: TopProfessorData[] } = {}
+                                                        filtered.forEach(p => {
+                                                            const dept = p.departmentName || "General"
+                                                            if (!groups[dept]) groups[dept] = []
+                                                            groups[dept].push(p)
+                                                        })
+
+                                                        // Sort groups by their top ranked professor's global rank
+                                                        const sortedDepts = Object.keys(groups).sort((a, b) => {
+                                                            const minRankA = Math.min(...groups[a].map(p => rankMap.get(p.professorId) || 999))
+                                                            const minRankB = Math.min(...groups[b].map(p => rankMap.get(p.professorId) || 999))
+                                                            return performanceSortOrder === "asc" ? minRankB - minRankA : minRankA - minRankB
+                                                        })
+
+                                                        if (sortedDepts.length === 0) {
+                                                            return (
+                                                                <TableRow>
+                                                                    <TableCell colSpan={5} className="text-center py-24">
+                                                                        <div className="flex flex-col items-center justify-center space-y-4">
+                                                                            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
+                                                                                <Search className="h-8 w-8 text-gray-300" />
+                                                                            </div>
+                                                                            <div className="text-gray-400 font-medium text-xs tracking-wider">No records found matching search</div>
+                                                                        </div>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )
+                                                        }
+
+                                                        return (
+                                                            <>
+                                                                {sortedDepts.map(dept => (
+                                                                    <Fragment key={dept}>
+                                                                        <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-l-4 border-l-primary/40">
+                                                                            <TableCell colSpan={5} className="py-2 px-4 border-b border-gray-100">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-primary/60" />
+                                                                                    <span className="font-bold text-primary/80 text-[10px] uppercase tracking-widest">Dept: {dept}</span>
+                                                                                    <span className="text-[10px] text-gray-400 font-normal">
+                                                                                        ({groups[dept].length} PROFESSOR{groups[dept].length !== 1 ? 'S' : ''})
+                                                                                    </span>
+                                                                                </div>
+                                                                            </TableCell>
+                                                                        </TableRow>
+                                                                        {groups[dept].sort((a, b) => {
+                                                                            const scoreDiff = b.performanceScore - a.performanceScore
+                                                                            if (scoreDiff !== 0) return scoreDiff
+                                                                            return a.professorName.localeCompare(b.professorName)
+                                                                        }).map((professor) => {
+                                                                            const rank = rankMap.get(professor.professorId) || 0
+                                                                            return (
+                                                                                <TableRow key={professor.professorId} className="group hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                                                    <TableCell className="py-2 px-4">
+                                                                                        <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs ${getRankBadgeColor(rank - 1)}`}>
+                                                                                            {rank}
+                                                                                        </div>
+                                                                                    </TableCell>
+                                                                                    <TableCell className="py-2 px-4">
+                                                                                        <div className="font-bold text-[#374151] text-sm">{professor.professorName}</div>
+                                                                                    </TableCell>
+                                                                                    <TableCell className="py-2 px-4">
+                                                                                        <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                                                                                            {professor.departmentName}
+                                                                                        </div>
+                                                                                    </TableCell>
+                                                                                    <TableCell className="py-2 px-4">
+                                                                                        <div className="space-y-1 w-full max-w-[150px] mx-auto">
+                                                                                            <div className="relative h-2.5 w-full bg-[#F3F4F6] rounded-full overflow-hidden shadow-inner p-[1px]">
+                                                                                                <div
+                                                                                                    className={`h-full transition-all duration-700 ease-out rounded-full ${getProgressBarColor(professor.performanceScore)}`}
+                                                                                                    style={{ width: `${professor.performanceScore}%` }}
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div className="flex justify-center">
+                                                                                                <Badge variant="outline" className={`text-[8px] px-1.5 h-3.5 font-bold uppercase tracking-wider ${getPerformanceBadgeStyle(professor.performanceScore)}`}>
+                                                                                                    {getPerformanceLabel(professor.performanceScore)}
+                                                                                                </Badge>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </TableCell>
+                                                                                    <TableCell className="py-2 px-4 text-center">
+                                                                                        <div className={`font-bold text-base ${professor.performanceScore === 100 ? 'text-[#FF6B00]' : 'text-[#374151]'}`}>
+                                                                                            {professor.performanceScore}%
+                                                                                        </div>
+                                                                                    </TableCell>
+                                                                                </TableRow>
+                                                                            )
+                                                                        })}
+                                                                    </Fragment>
+                                                                ))}
+                                                                {/* Summary Footer */}
+                                                                <TableRow className="bg-white hover:bg-white border-t border-gray-100">
+                                                                    <TableCell colSpan={5} className="py-3 px-4">
+                                                                        <div className="text-[11px] text-gray-400">
+                                                                            Showing {filtered.length} of {categoryData.length} professors in {performanceCategory}
+                                                                        </div>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            </>
+                                                        )
+                                                    } else {
+                                                        // Flat List sorting
+                                                        const flatList = [...filtered].sort((a, b) => {
+                                                            let comparison = 0
+                                                            if (performanceSortBy === "score") {
+                                                                comparison = b.performanceScore - a.performanceScore
+                                                                if (comparison === 0) comparison = a.professorName.localeCompare(b.professorName)
+                                                            } else if (performanceSortBy === "name") {
+                                                                comparison = a.professorName.localeCompare(b.professorName)
+                                                            }
+                                                            return performanceSortOrder === "asc" ? -comparison : comparison
+                                                        })
+
+                                                        if (flatList.length === 0) {
+                                                            return (
+                                                                <TableRow>
+                                                                    <TableCell colSpan={5} className="text-center py-24">
+                                                                        <div className="flex flex-col items-center justify-center space-y-4">
+                                                                            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
+                                                                                <Search className="h-8 w-8 text-gray-300" />
+                                                                            </div>
+                                                                            <div className="text-gray-400 font-medium text-xs tracking-wider">No records found matching search</div>
+                                                                        </div>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            )
+                                                        }
+
+                                                        return (
+                                                            <>
+                                                                {flatList.map((professor) => {
+                                                                    const rank = rankMap.get(professor.professorId) || 0
+                                                                    return (
+                                                                        <TableRow key={professor.professorId} className="group hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                                            <TableCell className="py-2 px-4">
+                                                                                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs ${getRankBadgeColor(rank - 1)}`}>
+                                                                                    {rank}
+                                                                                </div>
+                                                                            </TableCell>
+                                                                            <TableCell className="py-2 px-4">
+                                                                                <div className="font-bold text-[#374151] text-sm">{professor.professorName}</div>
+                                                                            </TableCell>
+                                                                            <TableCell className="py-2 px-4">
+                                                                                <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                                                                                    {professor.departmentName}
+                                                                                </div>
+                                                                            </TableCell>
+                                                                            <TableCell className="py-2 px-4">
+                                                                                <div className="space-y-1 w-full max-w-[150px] mx-auto">
+                                                                                    <div className="relative h-2.5 w-full bg-[#F3F4F6] rounded-full overflow-hidden shadow-inner p-[1px]">
+                                                                                        <div
+                                                                                            className={`h-full transition-all duration-700 ease-out rounded-full ${getProgressBarColor(professor.performanceScore)}`}
+                                                                                            style={{ width: `${professor.performanceScore}%` }}
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div className="flex justify-center">
+                                                                                        <Badge variant="outline" className={`text-[8px] px-1.5 h-3.5 font-bold uppercase tracking-wider ${getPerformanceBadgeStyle(professor.performanceScore)}`}>
+                                                                                            {getPerformanceLabel(professor.performanceScore)}
+                                                                                        </Badge>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </TableCell>
+                                                                            <TableCell className="py-2 px-4 text-center">
+                                                                                <div className={`font-bold text-base ${professor.performanceScore === 100 ? 'text-[#FF6B00]' : 'text-[#374151]'}`}>
+                                                                                    {professor.performanceScore}%
+                                                                                </div>
+                                                                            </TableCell>
+                                                                        </TableRow>
+                                                                    )
+                                                                })}
+                                                                {/* Summary Footer */}
+                                                                <TableRow className="bg-white hover:bg-white border-t border-gray-100">
+                                                                    <TableCell colSpan={5} className="py-3 px-4">
+                                                                        <div className="text-[11px] text-gray-400">
+                                                                            Showing {flatList.length} of {categoryData.length} professors in {performanceCategory}
+                                                                        </div>
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            </>
+                                                        )
+                                                    }
+                                                })()}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* LEVEL 3: Departments */}
+                        {viewLevel === "departments" && selectedPeriod && (
+                            <>
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-2 rounded-lg bg-purple-50 border border-purple-100">
+                                            <Folder className="h-5 w-5 text-purple-600" />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <CardTitle className="text-xl font-bold text-gray-900">Departments</CardTitle>
+                                            <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
+                                                {(() => {
+                                                    const departments = new Set<string>()
+                                                    selectedPeriod.professorEvaluations.forEach(prof => {
+                                                        if (prof.departmentName) departments.add(prof.departmentName)
+                                                    })
+                                                    return departments.size
+                                                })()} departments
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                    <div className="relative w-full sm:w-64">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            placeholder="Search departments..."
+                                            value={departmentsSearch}
+                                            onChange={(e) => setDepartmentsSearch(e.target.value)}
+                                            className="pl-9 h-9"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                    {(() => {
+                                        const departments = new Set<string>()
+                                        selectedPeriod.professorEvaluations.forEach(prof => {
+                                            if (prof.departmentName) departments.add(prof.departmentName)
+                                        })
+                                        return Array.from(departments).sort().filter(dept => {
+                                            if (!departmentsSearch) return true
+                                            return dept.toLowerCase().includes(departmentsSearch.toLowerCase())
+                                        }).map((dept, index) => {
+                                            const palette = [
+                                                { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
+                                                { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
+                                                { bg: "bg-purple-50/50", border: "border-purple-200", icon: "bg-purple-100 text-purple-600", chevron: "text-purple-400" },
+                                                { bg: "bg-pink-50/50", border: "border-pink-200", icon: "bg-pink-100 text-pink-600", chevron: "text-pink-400" },
+                                                { bg: "bg-amber-50/50", border: "border-amber-200", icon: "bg-amber-100 text-amber-600", chevron: "text-amber-400" },
+                                                { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
+                                            ]
+                                            const color = palette[index % palette.length]
+                                            const deptProfs = selectedPeriod.professorEvaluations.filter(p => p.departmentName === dept)
+                                            const totalEvals = deptProfs.reduce((sum, p) => sum + p.evaluations.length, 0)
+                                            return (
+                                                <Card 
+                                                    key={dept} 
+                                                    className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
+                                                    onClick={() => handleDepartmentClick(dept)}
+                                                >
+                                                    <CardContent className="p-4 sm:p-5 flex items-center justify-between">
+                                                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                            <div className={`w-12 h-12 rounded-xl flex-shrink-0 ${color.icon} flex items-center justify-center transition-colors shadow-sm`}>
+                                                                <Folder className="h-6 w-6" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors line-clamp-2 text-sm leading-tight">
+                                                                    {dept}
+                                                                </h4>
+                                                                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
+                                                                        <Users className="h-3 w-3" />
+                                                                        {deptProfs.length} professor{deptProfs.length !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
+                                                                        <FileText className="h-3 w-3" />
+                                                                        {totalEvals} eval{totalEvals !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight className={`h-5 w-5 flex-shrink-0 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
+                                                    </CardContent>
+                                                </Card>
+                                            )
+                                        })
+                                    })()}
+                                </div>
                             </>
                         )}
 
@@ -1046,15 +1765,20 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                     </div>
                                 ) : (
                                     <>
-                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                                             <div className="flex items-center gap-2">
-                                                <Users className="h-5 w-5 text-green-500" />
-                                                <h3 className="font-semibold text-lg">Professors</h3>
-                                                <Badge variant="secondary">{professorsForDepartment.length} professor{professorsForDepartment.length !== 1 ? 's' : ''}</Badge>
+                                                <div className="p-2 rounded-lg bg-green-50 border border-green-100">
+                                                    <Users className="h-5 w-5 text-green-600" />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <CardTitle className="text-xl font-bold text-gray-900">Professors</CardTitle>
+                                                    <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
+                                                        {professorsForDepartment.length} professors
+                                                    </Badge>
+                                                </div>
                                             </div>
-                                            {/* Search bar */}
                                             <div className="relative w-full sm:w-64">
-                                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                                 <Input
                                                     placeholder="Search professors..."
                                                     value={professorsSearch}
@@ -1063,42 +1787,44 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                 />
                                             </div>
                                         </div>
-                                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                                             {professorsForDepartment.filter(prof => {
                                                 if (!professorsSearch) return true
                                                 return prof.professorName.toLowerCase().includes(professorsSearch.toLowerCase())
                                             }).map((prof, index) => {
-
-                                                const borderColors = ["border-l-blue-500", "border-l-green-500", "border-l-purple-500", "border-l-orange-500", "border-l-pink-500"]
-                                                const borderColor = borderColors[index % borderColors.length]
+                                                const palette = [
+                                                    { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
+                                                    { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
+                                                    { bg: "bg-purple-50/50", border: "border-purple-200", icon: "bg-purple-100 text-purple-600", chevron: "text-purple-400" },
+                                                    { bg: "bg-pink-50/50", border: "border-pink-200", icon: "bg-pink-100 text-pink-600", chevron: "text-pink-400" },
+                                                    { bg: "bg-amber-50/50", border: "border-amber-200", icon: "bg-amber-100 text-amber-600", chevron: "text-amber-400" },
+                                                    { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
+                                                ]
+                                                const color = palette[index % palette.length]
                                                 return (
-                                                    <Card
-                                                        key={prof.professorId}
-                                                        className={`relative bg-white border-2 ${borderColor} rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer`}
+                                                    <Card 
+                                                        key={prof.professorId} 
+                                                        className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
                                                         onClick={() => handleProfessorClick(prof.professorId)}
                                                     >
-                                                        <CardContent className="p-4">
-                                                            <div className="flex items-start gap-3 mb-3">
-                                                                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center border-2 border-gray-300">
-                                                                    <svg className="w-8 h-8 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                                                                    </svg>
+                                                        <CardContent className="p-4 sm:p-5 flex items-center justify-between">
+                                                            <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                                <div className={`w-12 h-12 rounded-full flex-shrink-0 ${color.icon} flex items-center justify-center transition-colors shadow-sm border-2 border-white`}>
+                                                                    <Users className="h-6 w-6" />
                                                                 </div>
-                                                                <div className="flex-1">
-                                                                    <h3 className="font-bold text-gray-900 text-lg">{prof.professorName}</h3>
-                                                                    <p className="text-gray-600 text-xs">Professor</p>
+                                                                <div className="min-w-0">
+                                                                    <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors truncate text-sm leading-tight">
+                                                                        {prof.professorName}
+                                                                    </h4>
+                                                                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                                        <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
+                                                                            <BarChart3 className="h-3 w-3" />
+                                                                            {prof.evaluationCount} eval{prof.evaluationCount !== 1 ? 's' : ''}
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <Badge variant="secondary" className="text-xs">
-                                                                    <BarChart3 className="h-3 w-3 mr-1" />
-                                                                    {prof.evaluationCount} evaluation{prof.evaluationCount !== 1 ? 's' : ''}
-                                                                </Badge>
-                                                                <Button variant="outline" size="sm" className="text-xs h-8">
-                                                                    View Results
-                                                                    <ChevronRight className="h-3 w-3 ml-1" />
-                                                                </Button>
-                                                            </div>
+                                                            <ChevronRight className={`h-5 w-5 flex-shrink-0 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
                                                         </CardContent>
                                                     </Card>
                                                 )
@@ -1108,8 +1834,6 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                 )}
                             </>
                         )}
-
-                        {/* LEVEL 4: Results */}
                         {viewLevel === "results" && selectedProfessorData && (
                             <>
                                 <div className="flex flex-col gap-4 mb-6">
@@ -1399,12 +2123,12 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                     </div>
                                                 </div>
                                             )
-                                        })}
-                                    </div>
-                                )}
-                            </>
-                        )}
-                    </div>
+                                        })
+                                    }
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             </div>
 
