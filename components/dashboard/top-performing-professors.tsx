@@ -192,29 +192,29 @@ export function TopPerformingProfessors() {
 
   // Get performance color based on score - Using system colors
   const getPerformanceColor = (score: number) => {
-    if (score >= 90) return "text-chart-5" // Green for excellent
-    if (score >= 80) return "text-primary" // Primary blue for very good
-    if (score >= 70) return "text-chart-3" // Yellow for good
-    if (score >= 60) return "text-orange-600" // Orange for satisfactory
+    if (score >= 4.5) return "text-chart-5" // Green for excellent
+    if (score >= 3.5) return "text-primary" // Primary blue for very good
+    if (score >= 2.5) return "text-chart-3" // Yellow for good
+    if (score >= 1.5) return "text-orange-600" // Orange for satisfactory
     return "text-destructive" // Red for needs improvement
   }
 
   // Get progress bar color based on score - Custom colors per performance level
   const getProgressBarColor = (score: number) => {
-    if (score >= 90) return "bg-[#628141]" // Specific green for excellent
-    if (score >= 80) return "bg-green-500" // Green for very good
-    if (score >= 70) return "bg-chart-3" // Yellow (var(--chart-3)) for good
-    if (score >= 60) return "bg-orange-600" // Orange-600 for satisfactory
+    if (score >= 4.5) return "bg-[#628141]" // Specific green for excellent
+    if (score >= 3.5) return "bg-green-500" // Green for very good
+    if (score >= 2.5) return "bg-chart-3" // Yellow (var(--chart-3)) for good
+    if (score >= 1.5) return "bg-orange-600" // Orange-600 for satisfactory
     return "bg-destructive" // Red (var(--destructive)) for needs improvement
   }
 
   // Get performance label
   const getPerformanceLabel = (score: number) => {
-    if (score >= 90) return "Excellent"
-    if (score >= 80) return "Very Good"
-    if (score >= 70) return "Good"
-    if (score >= 60) return "Satisfactory"
-    if (score > 0) return "Needs Improvement"
+    if (score >= 4.5) return "Excellent"
+    if (score >= 3.5) return "Very Satisfactory"
+    if (score >= 2.5) return "Satisfactory"
+    if (score >= 1.5) return "Fair"
+    if (score > 0) return "Poor"
     return "No Data"
   }
 
@@ -238,7 +238,7 @@ export function TopPerformingProfessors() {
       let comparison = 0
       switch (sortBy) {
         case "score":
-          comparison = b.performanceScore - a.performanceScore
+          comparison = b.averageRating - a.averageRating
           if (comparison === 0) comparison = a.professorName.localeCompare(b.professorName)
           break
         case "name":
@@ -347,7 +347,7 @@ export function TopPerformingProfessors() {
       if (!isFirstCategory) y += 8
       doc.setFontSize(14)
       doc.setFont("helvetica", "bold")
-      doc.setTextColor(15, 23, 42) 
+      doc.setTextColor(15, 23, 42)
       doc.text(category.label, 14, y)
       y += 4
       doc.setDrawColor(30, 80, 160) // Professional Blue
@@ -361,13 +361,13 @@ export function TopPerformingProfessors() {
         // Grouped rendering (Department dividers)
         sortedDepts.forEach((dept) => {
           const deptProfs = [...deptGroups[dept]].sort((a, b) => b.performanceScore - a.performanceScore)
-          
+
           if (y > pageHeight - 35) {
             doc.addPage()
             y = 20
             isHeaderOnPage = false
           }
-          
+
           if (!isHeaderOnPage) {
             doc.setFillColor(241, 245, 249)
             doc.rect(12, y - 6, pageWidth - 24, rowHeight + 2, "F")
@@ -400,7 +400,7 @@ export function TopPerformingProfessors() {
               colHeaders.forEach((header, i) => doc.text(header.toUpperCase(), colX[i], y))
               y += rowHeight + 2
               isHeaderOnPage = true
-              
+
               doc.setFillColor(239, 246, 255)
               doc.rect(12, y - 5, pageWidth - 24, rowHeight, "F")
               doc.setFont("helvetica", "bold")
@@ -418,16 +418,16 @@ export function TopPerformingProfessors() {
             const rank = rankMap.get(professor.professorId) || 0
             doc.text(`${rank}`, colX[0], y)
             doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
-            
+
             const label = getPerformanceLabel(professor.performanceScore)
             if (label === "Excellent") doc.setTextColor(21, 128, 61)
-            else if (label === "Very Good") doc.setTextColor(37, 99, 235)
-            else if (label === "Good") doc.setTextColor(180, 83, 9)
+            else if (label === "Very Satisfactory") doc.setTextColor(37, 99, 235)
+            else if (label === "Satisfactory") doc.setTextColor(180, 83, 9)
             else doc.setTextColor(220, 38, 38)
-            
+
             doc.text(label, colX[2], y)
             doc.setTextColor(15, 23, 42).setFont("helvetica", "bold")
-            doc.text(`${professor.performanceScore}%`, colX[3], y)
+            doc.text(`${professor.averageRating.toFixed(2)}`, colX[3], y)
             doc.setFont("helvetica", "normal")
             y += rowHeight
           })
@@ -466,13 +466,13 @@ export function TopPerformingProfessors() {
 
           const label = getPerformanceLabel(professor.performanceScore)
           if (label === "Excellent") doc.setTextColor(21, 128, 61)
-          else if (label === "Very Good") doc.setTextColor(37, 99, 235)
-          else if (label === "Good") doc.setTextColor(180, 83, 9)
+          else if (label === "Very Satisfactory") doc.setTextColor(37, 99, 235)
+          else if (label === "Satisfactory") doc.setTextColor(180, 83, 9)
           else doc.setTextColor(220, 38, 38)
-          
+
           doc.text(label, colX[3], y)
           doc.setTextColor(15, 23, 42).setFont("helvetica", "bold")
-          doc.text(`${professor.performanceScore}%`, colX[4], y)
+          doc.text(`${professor.averageRating.toFixed(2)}`, colX[4], y)
           doc.setFont("helvetica", "normal")
           y += rowHeight
         })
@@ -504,7 +504,7 @@ export function TopPerformingProfessors() {
               <TrendingUp className="h-5 w-5 text-primary" />
               Top 3 Performing Professors by Category
             </CardTitle>
-            <CardDescription>Top 3 professors per category based on Strongly Agree and Agree responses from student evaluations</CardDescription>
+            <CardDescription>Top 3 professors per category based on Excellent and Very Satisfactory responses from student evaluations</CardDescription>
           </div>
           <div className="space-y-4">
             {[...Array(3)].map((_, index) => (
@@ -529,7 +529,7 @@ export function TopPerformingProfessors() {
                 <TrendingUp className="h-5 w-5 text-primary" />
                 Top 3 Performing Professors by Category
               </CardTitle>
-              <CardDescription>Top 3 professors per category based on Strongly Agree and Agree responses from student evaluations</CardDescription>
+              <CardDescription>Top 3 professors per category based on Excellent and Very Satisfactory responses from student evaluations</CardDescription>
             </div>
             {totalProfessorsCount > 0 && (
               <Dialog open={isViewAllOpen} onOpenChange={setIsViewAllOpen}>
@@ -627,9 +627,9 @@ export function TopPerformingProfessors() {
                           (() => {
                             // Pre-calculate global ranks based on SCORE, with name TIE-BREAKER
                             const scoreSortedProfessors = [...filteredAndSortedProfessors].sort((a, b) => {
-                                const scoreDiff = b.performanceScore - a.performanceScore
-                                if (scoreDiff !== 0) return scoreDiff
-                                return a.professorName.localeCompare(b.professorName)
+                              const scoreDiff = b.performanceScore - a.performanceScore
+                              if (scoreDiff !== 0) return scoreDiff
+                              return a.professorName.localeCompare(b.professorName)
                             })
                             const rankMap = new Map<string, number>()
                             scoreSortedProfessors.forEach((p, i) => rankMap.set(p.professorId, i + 1))
@@ -721,21 +721,21 @@ export function TopPerformingProfessors() {
                                   <div className="space-y-1 w-full max-w-[250px]">
                                     <div className="relative h-2.5 w-full bg-muted rounded-full overflow-hidden shadow-inner">
                                       <div
-                                        className={`h-full transition-all duration-700 ease-out ${getProgressBarColor(professor.performanceScore)}`}
-                                        style={{ width: `${professor.performanceScore}%` }}
+                                        className={`h-full transition-all duration-700 ease-out ${getProgressBarColor(professor.averageRating)}`}
+                                        style={{ width: `${(professor.averageRating / 5) * 100}%` }}
                                       />
                                     </div>
                                     <Badge
                                       variant="outline"
-                                      className={`text-[10px] h-4 font-semibold ${getPerformanceColor(professor.performanceScore)} border-current/20`}
+                                      className={`text-[10px] h-4 font-semibold ${getPerformanceColor(professor.averageRating)} border-current/20`}
                                     >
-                                      {getPerformanceLabel(professor.performanceScore)}
+                                      {getPerformanceLabel(professor.averageRating)}
                                     </Badge>
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  <div className={`font-bold text-sm sm:text-base ${getPerformanceColor(professor.performanceScore)}`}>
-                                    {professor.performanceScore}%
+                                  <div className={`font-bold text-sm sm:text-base ${getPerformanceColor(professor.averageRating)}`}>
+                                    {professor.averageRating.toFixed(2)}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -817,24 +817,24 @@ export function TopPerformingProfessors() {
                             {/* Performance Bar */}
                             <div className="space-y-1.5">
                               <div className="flex items-center justify-between text-xs">
-                                <span className="text-muted-foreground">Performance</span>
+                                <span className="text-muted-foreground">Average Score</span>
                                 <Badge
                                   variant="outline"
-                                  className={`font-semibold ${getPerformanceColor(professor.performanceScore)}`}
+                                  className={`font-semibold ${getPerformanceColor(professor.averageRating)}`}
                                 >
-                                  {getPerformanceLabel(professor.performanceScore)}
+                                  {getPerformanceLabel(professor.averageRating)}
                                 </Badge>
                               </div>
                               <div className="relative">
                                 <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
                                   <div
-                                    className={`h-full transition-all duration-500 ${getProgressBarColor(professor.performanceScore)}`}
-                                    style={{ width: `${professor.performanceScore}%` }}
+                                    className={`h-full transition-all duration-500 ${getProgressBarColor(professor.averageRating)}`}
+                                    style={{ width: `${(professor.averageRating / 5) * 100}%` }}
                                   />
                                 </div>
                                 <div className="absolute inset-0 flex items-center justify-center">
                                   <span className="text-[10px] font-bold text-white drop-shadow-md">
-                                    {professor.performanceScore}%
+                                    {professor.averageRating.toFixed(2)}
                                   </span>
                                 </div>
                               </div>
@@ -844,14 +844,14 @@ export function TopPerformingProfessors() {
 
                         {/* Right side: Stats */}
                         <div className="flex-shrink-0 text-right space-y-1">
-                          <div className={`font-bold text-2xl ${getPerformanceColor(professor.performanceScore)}`}>
-                            {professor.performanceScore}%
+                          <div className={`font-bold text-2xl ${getPerformanceColor(professor.averageRating)}`}>
+                            {professor.averageRating.toFixed(2)}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {professor.positiveResponses} positive / {professor.totalResponses} total
+                            {professor.totalResponses} responses
                           </div>
                           <div className="text-xs text-chart-5 font-medium">
-                            SA: {professor.stronglyAgreeCount} | A: {professor.agreeCount}
+                            E: {professor.excellentCount} | VS: {professor.verySatisfactoryCount}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {professor.totalEvaluations} respondent{professor.totalEvaluations !== 1 ? 's' : ''}
@@ -887,15 +887,15 @@ export function TopPerformingProfessors() {
           <div className="mt-6 mb-0 pt-4 pb-0 border-t border-border">
             <div className="text-xs text-muted-foreground space-y-2">
               <p className="font-medium">Performance Calculation:</p>
-              <p className="break-words">Based on percentage of positive responses (Strongly Agree + Agree) from student evaluations per category.</p>
+              <p className="break-words">Based on the weighted Average Score (1.00 - 5.00) from student evaluations per category.</p>
               <div className="flex flex-wrap gap-3 mt-2">
-                <span className="text-chart-5 font-medium whitespace-nowrap">● Excellent (90-100%)</span>
-                <span className="text-primary font-medium whitespace-nowrap">● Very Good (80-89%)</span>
-                <span className="text-chart-3 font-medium whitespace-nowrap">● Good (70-79%)</span>
-                <span className="text-orange-600 font-medium whitespace-nowrap">● Satisfactory (60-69%)</span>
-                <span className="text-destructive font-medium whitespace-nowrap">● Needs Improvement (&lt;60%)</span>
+                <span className="text-chart-5 font-medium whitespace-nowrap">● Excellent (4.50 - 5.00)</span>
+                <span className="text-primary font-medium whitespace-nowrap">● Very Satisfactory (3.50 - 4.49)</span>
+                <span className="text-chart-3 font-medium whitespace-nowrap">● Satisfactory (2.50 - 3.49)</span>
+                <span className="text-orange-600 font-medium whitespace-nowrap">● Fair (1.50 - 2.49)</span>
+                <span className="text-destructive font-medium whitespace-nowrap">● Poor (&lt; 1.50)</span>
               </div>
-              <p className="text-xs italic mt-2 break-words">SA = Strongly Agree, A = Agree</p>
+              <p className="text-xs italic mt-2 break-words">E = Excellent, VS = Very Satisfactory</p>
             </div>
           </div>
         )}

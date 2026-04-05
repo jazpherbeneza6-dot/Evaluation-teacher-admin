@@ -183,7 +183,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
 
     if (questionType === "Likert Scale") {
       // Kung Likert Scale, i-set ang mga standard options
-      setOptions(["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"])
+      setOptions(["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"])
     } else {
       // Kung text type, i-set ang empty options
       setOptions([""])
@@ -293,8 +293,8 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
     const sectionOrder = [
       'A. Instructional Competence',
       'B. Classroom Management',
-      'D. Student Support and Development',
       'C. Professionalism and Personal Qualities',
+      'D. Student Support and Development',
       'E. Research',
       'Other',
       'F. Comments',
@@ -419,7 +419,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         isActive: true,
       }
       if (qt === "Likert Scale") {
-        questionData.options = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
+        questionData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
       }
 
       await evaluationQuestionService.create(questionData)
@@ -483,7 +483,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         isActive: true,
       }
       if (qt === "Likert Scale") {
-        questionData.options = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
+        questionData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
       }
 
       await evaluationQuestionService.create(questionData)
@@ -516,7 +516,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
     if (!editingQuestion || !questionText.trim()) return;
     // Find all similar questions (using original text of the question being edited)
     const originalText = editingQuestion.questionText;
-    const similarQuestions = findAllQuestionsByText(originalText);
+    const similarQuestions = questions.filter(q => q.questionText === originalText);
     // Collect all update promises
     try {
       await Promise.all(similarQuestions.map(q => {
@@ -528,7 +528,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
           isActive: true,
         }
         if (questionType === "Likert Scale") {
-          updatedData.options = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
+          updatedData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
         }
         return evaluationQuestionService.update(q.id, updatedData);
       }))
@@ -805,7 +805,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
 
             // Only add options for Likert Scale questions
             if (!isCommentsSection) {
-              questionData.options = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
+              questionData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
             }
 
             await evaluationQuestionService.create(questionData)

@@ -81,16 +81,15 @@ const chartColors = [
     "#84cc16", // lime
 ]
 
-// Section order and colors (same as evaluation-results-management)
 const SECTION_ORDER = [
     "A. Instructional Competence",
     "Instructional Competence",
     "B. Classroom Management",
     "Classroom Management",
-    "C. Professionalism and Personal Qualities",
-    "Professionalism and Personal Qualities",
-    "D. Student Support and Development",
-    "Student Support and Development",
+    "C. Professionalism & Personal Qualities",
+    "Professionalism & Personal Qualities",
+    "D. Student Support & Development",
+    "Student Support & Development",
     "E. Research",
     "Research",
     "F. Comments",
@@ -123,10 +122,10 @@ const SECTION_COLORS: Record<string, { bg: string; border: string; text: string 
     "Instructional Competence": { bg: "bg-blue-50", border: "border-blue-500", text: "text-blue-700" },
     "B. Classroom Management": { bg: "bg-green-50", border: "border-green-500", text: "text-green-700" },
     "Classroom Management": { bg: "bg-green-50", border: "border-green-500", text: "text-green-700" },
-    "C. Professionalism and Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
-    "Professionalism and Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
-    "D. Student Support and Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
-    "Student Support and Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
+    "C. Professionalism & Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
+    "Professionalism & Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
+    "D. Student Support & Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
+    "Student Support & Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
     "E. Research": { bg: "bg-pink-50", border: "border-pink-500", text: "text-pink-700" },
     "Research": { bg: "bg-pink-50", border: "border-pink-500", text: "text-pink-700" },
     "F. Comments": { bg: "bg-teal-50", border: "border-teal-500", text: "text-teal-700" },
@@ -271,7 +270,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         try {
             const periodData = await evaluationHistoryService.getHistoryById(periodId)
             setSelectedPeriod(periodData)
-            
+
             if (historyType === "performance") {
                 setViewLevel("performance-rankings")
             } else {
@@ -376,7 +375,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                     if (!aggregates[qid]) {
                         let baseOptions = Array.isArray(response.options) ? response.options : []
                         if ((!baseOptions || baseOptions.length === 0) && response.questionType === "Likert Scale") {
-                            baseOptions = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
+                            baseOptions = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
                         }
                         const initialCounts: Record<string, number> = {}
                         baseOptions.forEach((opt: string) => {
@@ -508,13 +507,10 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         }
 
         // Title
-        doc.setFontSize(16)
+        doc.setFontSize(18)
         doc.setFont("helvetica", "bold")
-        doc.text("Professor Evaluation Results (Archived)", 14, 18)
-        doc.setFontSize(11)
-        doc.setFont("helvetica", "normal")
-        const deptSuffix = deptName ? ` - ${deptName}` : ""
-        doc.text(`${profName}${deptSuffix}`, 14, 26)
+        doc.setTextColor(30, 41, 59)
+        doc.text("Professor Evaluation Results (Archived)", 20, 22)
 
         // Evaluation Period on the right
         if (period) {
@@ -524,11 +520,16 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
             const periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}`
 
             doc.setFontSize(10)
-            doc.setTextColor(100, 100, 100)
+            doc.setTextColor(100, 116, 139)
             const textWidth = doc.getTextWidth(periodText)
-            doc.text(periodText, pageWidth - textWidth - 14, 26)
-            doc.setTextColor(30, 30, 30) // Reset color
+            doc.text(periodText, pageWidth - textWidth - 20, 30)
         }
+
+        doc.setFontSize(12)
+        doc.setFont("helvetica", "bold")
+        doc.setTextColor(100, 116, 139)
+        const profDisplay = profName.toUpperCase() + (deptName ? ` | ${deptName.toUpperCase()}` : "")
+        doc.text(profDisplay, 20, 30)
 
         // Group aggregates by section
         const grouped: Record<string, QuestionAggregate[]> = {}
@@ -549,81 +550,146 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         })
 
         // --- Overall Performance Summary Table ---
-        let y = 36
-        doc.setFontSize(12)
+        let y = 40
+        doc.setFontSize(13)
         doc.setFont("helvetica", "bold")
-        doc.text("Overall Performance Summary", 14, y)
-        y += 8
+        doc.setTextColor(30, 41, 59)
+        doc.text("Overall Performance Summary", 20, y)
+        y += 10
 
         // Table header
-        doc.setFillColor(55, 65, 81)
-        doc.rect(14, y - 5, pageWidth - 28, 8, "F")
-        doc.setFontSize(9)
+        doc.setFillColor(51, 65, 85)
+        doc.rect(20, y - 6, pageWidth - 40, 10, "F")
+        doc.setFontSize(11)
         doc.setTextColor(255, 255, 255)
-        doc.text("Section", 16, y)
-        doc.text("Score", pageWidth - 28, y)
-        y += 6
+        doc.text("Section Name", 24, y)
+        doc.text("Avg. Score", pageWidth - 24, y, { align: "right" })
+        y += 8
 
         doc.setTextColor(30, 30, 30)
         doc.setFont("helvetica", "normal")
-        let grandPositive = 0
-        let grandTotal = 0
+
+        // Weights map
+        const weights: Record<string, number> = {
+            "Instructional Competence": 0.4,
+            "Classroom Management": 0.2,
+            "Professionalism and Personal Qualities": 0.2,
+            "Personal and Professional Qualities": 0.2,
+            "Professionalism & Personal Qualities": 0.2,
+            "Personal & Professional Qualities": 0.2,
+            "Student Support and Development": 0.1,
+            "Student Engagement and Assessment": 0.1,
+            "Student Engagement & Assessment": 0.1,
+            "Student Support & Development": 0.1,
+            "Research": 0.1,
+            "E. Research": 0.1
+        }
+
+        let finalWeightedRating = 0
+        let totalDefinedWeights = 0
 
         sortedSecs.forEach((sec, idx) => {
             const secQuestions = grouped[sec]
             // Skip Comments
             if (sec.toLowerCase().includes("comment")) return
 
-            let secPositive = 0
-            let secTotal = 0
+            const cleanName = sec.replace(/^[A-F]\.\s*/, "").trim()
+            const weight = weights[cleanName] || 0
+
+            let secWeightedSum = 0
+            let secTotalResponses = 0
+
             secQuestions.forEach(q => {
                 if (q.questionType !== "text") {
-                    const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
-                    const opts = q.options || Object.keys(q.counts)
-                    secPositive += (q.counts[opts[0]] || 0) + (q.counts[opts[1]] || 0)
-                    secTotal += total
+                    const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                    let weightedScore = 0
+                    let count = 0
+
+                    opts.forEach((opt, oi) => {
+                        const val = q.counts[opt] || 0
+                        let score = 0
+                        const label = opt.toLowerCase()
+                        if (label === "strongly agree" || oi === 0) score = 5
+                        else if (label === "agree" || oi === 1) score = 4
+                        else if (label === "neutral" || label === "neither agree nor disagree") score = 3
+                        else if (label === "disagree" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                        else if (label === "strongly disagree" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+
+                        weightedScore += val * score
+                        count += val
+                    })
+
+                    secWeightedSum += weightedScore
+                    secTotalResponses += count
                 }
             })
-            grandPositive += secPositive
-            grandTotal += secTotal
-            const pct = secTotal > 0 ? Math.round((secPositive / secTotal) * 100) : 0
+
+            const secAvg = secTotalResponses > 0 ? secWeightedSum / secTotalResponses : 0
+            const secWeighted = secAvg * weight
+
+            finalWeightedRating += secWeighted
+            if (weight > 0) totalDefinedWeights += weight
 
             if (idx % 2 === 0) {
                 doc.setFillColor(248, 248, 248)
-                doc.rect(14, y - 5, pageWidth - 28, 8, "F")
+                doc.rect(20, y - 5, pageWidth - 40, 8, "F")
             }
 
-            const cleanName = sec.replace(/^[A-F]\.\s*/, "")
-            doc.text(truncateText(cleanName, pageWidth - 50), 16, y)
+            doc.text(cleanName, 24, y)
             doc.setFont("helvetica", "bold")
-            doc.text(`${pct}%`, pageWidth - 28, y)
+            doc.text(secAvg.toFixed(2), pageWidth - 24, y, { align: "right" })
             doc.setFont("helvetica", "normal")
             y += 8
         })
 
-        // Overall row
-        const overallPct = grandTotal > 0 ? Math.round((grandPositive / grandTotal) * 100) : 0
-        doc.setFillColor(55, 65, 81)
-        doc.rect(14, y - 5, pageWidth - 28, 9, "F")
+        doc.setFillColor(51, 65, 85)
+        doc.rect(20, y - 6, pageWidth - 40, 10, "F")
         doc.setTextColor(255, 255, 255)
         doc.setFont("helvetica", "bold")
-        doc.text("OVERALL", 16, y)
-        doc.text(`${overallPct}%`, pageWidth - 28, y)
-        doc.setTextColor(30, 30, 30)
-        y += 15
+        doc.setFontSize(12)
+        doc.text("Final Rating", 24, y)
+        doc.setFontSize(12)
+        doc.text(finalWeightedRating.toFixed(2), pageWidth - 24, y, { align: "right" })
+        doc.setTextColor(30, 41, 59)
+        y += 18
 
-        // --- Rating Scale Legend Box ---
-        doc.setFillColor(245, 247, 249)
-        doc.setDrawColor(220, 225, 230)
-        doc.roundedRect(14, y - 5, pageWidth - 28, 10, 1, 1, "FD")
-        doc.setFontSize(8)
+        // --- Rating Scale Description Box ---
+        const boxY = y - 6
+        const boxH = 46
+        doc.setFillColor(248, 250, 252)
+        doc.setDrawColor(226, 232, 240)
+        doc.roundedRect(20, boxY, pageWidth - 40, boxH, 2, 2, "FD")
+
+        doc.setFontSize(10)
         doc.setFont("helvetica", "bold")
-        doc.setTextColor(70, 80, 90)
-        doc.text("Rating Scale Reference:", 18, y + 1.5)
+        doc.setTextColor(51, 65, 85)
+        doc.text("RATING SCALE DESCRIPTION:", 24, boxY + 7)
+
+        doc.setFontSize(8)
         doc.setFont("helvetica", "normal")
-        doc.text("SA: Strongly Agree   |   A: Agree   |   D: Disagree   |   SD: Strongly Disagree", 55, y + 1.5)
-        doc.setTextColor(30, 30, 30)
-        y += 15
+        doc.setTextColor(71, 85, 105)
+        const scales = [
+            "5 – Excellent (consistently demonstrates outstanding classroom management skills)",
+            "4 – Very Satisfactory (often manages the class effectively, with minor areas for improvement)",
+            "3 – Satisfactory (generally maintains acceptable classroom order and organization)",
+            "2 – Fair (occasionally struggles with classroom control or organization)",
+            "1 – Poor (rarely demonstrates effective classroom management)"
+        ]
+
+        scales.forEach((s, si) => {
+            doc.text(s, 24, boxY + 13 + (si * 4.5))
+        })
+
+        // Horizontal line
+        doc.setDrawColor(226, 232, 240)
+        doc.line(24, boxY + 36, pageWidth - 24, boxY + 36)
+
+        doc.setFont("helvetica", "bold")
+        doc.text("Column Legend:", 24, boxY + 41)
+        doc.setFont("helvetica", "normal")
+        doc.text("E = Excellent  |  VS = Very Satisfactory  |  S = Satisfactory  |  F = Fair  |  P = Poor", 54, boxY + 41)
+
+        y += boxH + 8
 
         // --- Per-section question tables (comments last) ---
         const orderedSecs = [...sortedSecs.filter(s => !s.toLowerCase().includes("comments")), ...sortedSecs.filter(s => s.toLowerCase().includes("comment"))]
@@ -632,17 +698,23 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
             const cleanName = sec.replace(/^[A-F]\.\s*/, "")
             const isVerbal = sec.toLowerCase().includes("comments")
 
-            // Page break
-            if (y > pageHeight - 50) {
+            // Page break threshold for new section
+            if (y > pageHeight - 80) {
                 doc.addPage()
                 y = 18
             }
 
+            // Section constants
+            const margin = 20
+            const optStartX = pageWidth - 105
+            const spacing = 15
+
             // Section title
-            doc.setFontSize(11)
+            doc.setFontSize(13)
             doc.setFont("helvetica", "bold")
-            doc.text(cleanName, 14, y)
-            y += 8
+            doc.setTextColor(30, 41, 59)
+            doc.text(cleanName, margin, y)
+            y += 10
 
             if (isVerbal) {
                 // For Comment, list text responses
@@ -675,26 +747,22 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                 })
             } else {
                 // Likert questions table
-                // Get option headers from the first question
-                const optHeaders = secQuestions[0]?.options || Object.keys(secQuestions[0]?.counts || {})
-
                 // Table header
-                doc.setFillColor(55, 65, 81)
-                const headerH = 8
-                doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
-                doc.setFontSize(8)
+                doc.setFillColor(51, 65, 85)
+                const headerH = 10
+                doc.rect(margin, y - 6, pageWidth - (margin * 2), headerH, "F")
+                doc.setFontSize(10)
                 doc.setTextColor(255, 255, 255)
                 doc.setFont("helvetica", "bold")
-                doc.text("#", 16, y)
-                doc.text("Question", 24, y)
+                doc.text("#", margin + 4, y)
+                doc.text("Question", margin + 12, y)
+
                 // Option columns
-                const optStartX = pageWidth - 28 - (optHeaders.length * 22)
-                optHeaders.forEach((opt, oi) => {
-                    const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
-                    doc.text(label, optStartX + (oi * 22), y)
+                const labels = ["E", "VS", "S", "F", "P", "Total"]
+                labels.forEach((label, oi) => {
+                    doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                 })
-                doc.text("Total", pageWidth - 28, y)
-                y += 6
+                y += 8
 
                 doc.setTextColor(30, 30, 30)
                 doc.setFont("helvetica", "normal")
@@ -702,53 +770,55 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                 secQuestions.forEach((q, qi) => {
                     if (q.questionType === "text") return
 
-                    doc.setFontSize(8)
-                    const maxQWidth = optStartX - 28
+                    doc.setFontSize(9)
+                    const maxQWidth = optStartX - (margin + 12) - 10
                     const qLines = doc.splitTextToSize(q.questionText, maxQWidth)
-                    const lineH = 4.5
-                    const rowH = Math.max(8, qLines.length * lineH + 3)
+                    const lineH = 4.8
+                    const rowH = Math.max(12, qLines.length * lineH + 6)
+                    const centerShift = ((qLines.length - 1) * lineH) / 2
 
                     // Check if row fits on page, if not add new page with header
                     if (y + rowH - 5 > pageHeight - 15) {
                         doc.addPage()
                         y = 18
-                        doc.setFillColor(55, 65, 81)
-                        doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
-                        doc.setFontSize(8)
+                        doc.setFillColor(51, 65, 85)
+                        doc.rect(margin, y - 6, pageWidth - (margin * 2), headerH, "F")
+                        doc.setFontSize(10)
                         doc.setTextColor(255, 255, 255)
                         doc.setFont("helvetica", "bold")
-                        doc.text("#", 16, y)
-                        doc.text("Question", 24, y)
-                        optHeaders.forEach((opt, oi) => {
-                            const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
-                            doc.text(label, optStartX + (oi * 22), y)
+                        doc.text("#", margin + 4, y)
+                        // "Question" text omitted for cleaner look on continuation pages
+
+                        const labels = ["E", "VS", "S", "F", "P", "Total"]
+                        labels.forEach((label, oi) => {
+                            doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                         })
-                        doc.text("Total", pageWidth - 28, y)
-                        doc.setTextColor(30, 30, 30)
+
+                        doc.setTextColor(30, 41, 59)
                         doc.setFont("helvetica", "normal")
-                        y += 6
+                        y += 8
                     }
 
                     // Alternate row background
                     if (qi % 2 === 0) {
                         doc.setFillColor(248, 248, 248)
-                        doc.rect(14, y - 5, pageWidth - 28, rowH, "F")
+                        doc.rect(margin, y - 6, pageWidth - (margin * 2), rowH, "F")
                     }
 
-                    doc.setFontSize(8)
-                    doc.text(`${qi + 1}`, 16, y)
+                    doc.setFontSize(9)
+                    doc.text(`${qi + 1}`, margin + 4, y + centerShift)
                     // Print each line of the question text
                     qLines.forEach((line: string, li: number) => {
-                        doc.text(line, 24, y + (li * lineH))
+                        doc.text(line, margin + 12, y + (li * lineH))
                     })
 
-                    const opts = q.options || Object.keys(q.counts)
+                    const opts = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
                     const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
                     opts.forEach((opt, oi) => {
                         const count = q.counts[opt] || 0
-                        doc.text(`${count}`, optStartX + (oi * 22), y)
+                        doc.text(`${count}`, optStartX + (oi * spacing), y + centerShift, { align: "center" })
                     })
-                    doc.text(`${total}`, pageWidth - 28, y)
+                    doc.text(`${total}`, optStartX + (5 * spacing), y + centerShift, { align: "center" })
                     y += rowH
                 })
             }
@@ -766,7 +836,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
 
         const doc = new jsPDF({ orientation: "portrait" })
         generatePDFContent(doc, profName, deptName, aggs, selectedPeriod)
-        
+
         const safeName = profName.replace(/[^a-zA-Z0-9]/g, "_")
         doc.save(`History_${safeName}_evaluation_results.pdf`)
     }
@@ -808,14 +878,14 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
 
         const cats = performanceCategories.map(cat => ({ key: cat, label: cat }))
         const isGrouped = performanceSortBy === "department"
-        
+
         const colX_grouped = [14, 30, 190, 240]
         const colWidths_grouped = [14, 150, 48, 40]
-        const colHeaders_grouped = ["Rank", "Professor", "Performance", "Score"]
+        const colHeaders_grouped = ["Rank", "Professor", "Performance", "Avg Score"]
 
         const colX_flat = [14, 30, 110, 190, 240]
         const colWidths_flat = [14, 75, 75, 48, 40]
-        const colHeaders_flat = ["Rank", "Professor", "Dept", "Performance", "Score"]
+        const colHeaders_flat = ["Rank", "Professor", "Dept", "Performance", "Avg Score"]
 
         const colX = isGrouped ? colX_grouped : colX_flat
         const colWidths = isGrouped ? colWidths_grouped : colWidths_flat
@@ -831,7 +901,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
 
             // Sort category professors by score for global ranks
             const globalSorted = [...categoryProfessors].sort((a, b) => {
-                const scoreDiff = b.performanceScore - a.performanceScore
+                const scoreDiff = b.averageRating - a.averageRating
                 if (scoreDiff !== 0) return scoreDiff
                 return a.professorName.localeCompare(b.professorName)
             })
@@ -849,7 +919,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
             if (!isFirstCategory) y += 8
             doc.setFontSize(14)
             doc.setFont("helvetica", "bold")
-            doc.setTextColor(15, 23, 42) 
+            doc.setTextColor(15, 23, 42)
             doc.text(category.label, 14, y)
             y += 4
             doc.setDrawColor(30, 80, 160)
@@ -875,8 +945,8 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                 })
 
                 sortedDepts.forEach((dept) => {
-                    const deptProfs = [...groups[dept]].sort((a, b) => b.performanceScore - a.performanceScore)
-                    
+                    const deptProfs = [...groups[dept]].sort((a, b) => b.averageRating - a.averageRating)
+
                     if (y > pageHeight - 35) {
                         doc.addPage()
                         y = 20
@@ -919,18 +989,18 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                         const rank = rankMap.get(professor.professorId) || 0
                         doc.text(`${rank}`, colX[0], y)
                         doc.setTextColor(17, 24, 39).text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
-                        
-                        const label = getPerformanceLabel(professor.performanceScore)
+
+                        const label = getPerformanceLabel(professor.averageRating)
                         // Dynamic label colors
                         if (label === "Excellent") doc.setTextColor(22, 163, 74) // Green-600
-                        else if (label === "Very Good") doc.setTextColor(37, 99, 235) // Blue-600
-                        else if (label === "Good") doc.setTextColor(217, 119, 6) // Amber-600
+                        else if (label === "Very Satisfactory") doc.setTextColor(37, 99, 235) // Blue-600
+                        else if (label === "Satisfactory") doc.setTextColor(217, 119, 6) // Amber-600
                         else doc.setTextColor(220, 38, 38) // Red-600
-                        
+
                         doc.text(label, colX[2], y)
-                        
+
                         doc.setTextColor(17, 24, 39).setFont("helvetica", "bold")
-                        doc.text(`${professor.performanceScore}%`, colX[3], y)
+                        doc.text(`${professor.averageRating.toFixed(2)}`, colX[3], y)
                         doc.setFont("helvetica", "normal")
                         y += rowHeight
                     })
@@ -967,10 +1037,10 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                     doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
                     doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
 
-                    const label = getPerformanceLabel(professor.performanceScore)
+                    const label = getPerformanceLabel(professor.averageRating)
                     doc.text(label, colX[3], y)
                     doc.setFont("helvetica", "bold")
-                    doc.text(`${professor.performanceScore}%`, colX[4], y)
+                    doc.text(`${professor.averageRating.toFixed(2)}`, colX[4], y)
                     doc.setFont("helvetica", "normal")
                     y += rowHeight
                 })
@@ -1003,34 +1073,35 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
     }
 
     const getPerformanceColor = (score: number) => {
-        if (score >= 90) return "text-green-600"
-        if (score >= 80) return "text-primary"
-        if (score >= 70) return "text-amber-600"
-        if (score >= 60) return "text-orange-600"
+        if (score >= 4.50) return "text-green-600"
+        if (score >= 3.50) return "text-primary"
+        if (score >= 2.50) return "text-amber-600"
+        if (score >= 1.50) return "text-orange-600"
         return "text-destructive"
     }
 
     const getProgressBarColor = (score: number) => {
-        if (score >= 90) return "bg-[#647C3E]" // Dark Green from image
-        if (score >= 80) return "bg-[#00D261]" // Bright Green from image
-        if (score >= 70) return "bg-amber-500"
-        if (score >= 60) return "bg-orange-600"
-        return "bg-destructive"
+        if (score >= 4.50) return "bg-[#647C3E]" // Dark Green - Excellent
+        if (score >= 3.50) return "bg-[#00D261]" // Bright Green - Very Satisfactory
+        if (score >= 2.50) return "bg-amber-500" // Amber - Satisfactory
+        if (score >= 1.50) return "bg-orange-600" // Orange - Fair
+        return "bg-destructive" // Red - Poor
     }
 
     const getPerformanceBadgeStyle = (score: number) => {
-        if (score >= 90) return "bg-orange-50 text-orange-600 border-none"
-        if (score >= 80) return "bg-gray-100 text-gray-600 border-none"
-        if (score >= 70) return "bg-amber-50 text-amber-600 border-none"
+        if (score >= 4.50) return "bg-green-50 text-green-600 border-none"
+        if (score >= 3.50) return "bg-blue-50 text-blue-600 border-none"
+        if (score >= 2.50) return "bg-amber-50 text-amber-600 border-none"
+        if (score >= 1.50) return "bg-orange-50 text-orange-600 border-none"
         return "bg-red-50 text-red-600 border-none"
     }
 
     const getPerformanceLabel = (score: number) => {
-        if (score >= 90) return "Excellent"
-        if (score >= 80) return "Very Good"
-        if (score >= 70) return "Good"
-        if (score >= 60) return "Satisfactory"
-        if (score > 0) return "Needs Improvement"
+        if (score >= 4.50) return "Excellent"
+        if (score >= 3.50) return "Very Satisfactory"
+        if (score >= 2.50) return "Satisfactory"
+        if (score >= 1.50) return "Fair"
+        if (score > 0) return "Poor"
         return "No Data"
     }
 
@@ -1118,7 +1189,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                 {selectedPeriod && (
                                     <>
                                         <ChevronRight className="h-4 w-4 mx-1" />
-                                        <span className={viewLevel === "departments" || viewLevel === "performance-rankings" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { 
+                                        <span className={viewLevel === "departments" || viewLevel === "performance-rankings" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => {
                                             if (historyType === "performance") {
                                                 setViewLevel("performance-rankings");
                                             } else {
@@ -1151,147 +1222,562 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                         </div>
                     )}
 
-                        {/* LEVEL 1: Years */}
-                        {viewLevel === "years" && (
-                            <>
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                                    <div className="flex items-center gap-2">
-                                        <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
-                                            <Calendar className="h-5 w-5 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <CardTitle className="text-xl font-bold text-gray-900">Evaluation Library</CardTitle>
-                                            <CardDescription>Select a year to view archived evaluations</CardDescription>
-                                        </div>
-                                    </div>
-                                    <div className="relative w-full sm:w-64">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Search years..."
-                                            value={yearsSearch}
-                                            onChange={(e) => setYearsSearch(e.target.value)}
-                                            className="pl-9 h-9"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                                    {historyByYears.filter(y => {
-                                        if (!yearsSearch) return true
-                                        return y.year.toString().includes(yearsSearch)
-                                    }).map((yearData, index) => {
-                                        const colors = colorSchemes[index % colorSchemes.length]
-                                        return (
-                                            <Card
-                                                key={yearData.year}
-                                                className={`group cursor-pointer transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder} bg-gradient-to-br ${colors.gradient} hover:shadow-lg hover:scale-[1.02] relative overflow-hidden h-40`}
-                                                onClick={() => handleYearClick(yearData.year)}
-                                            >
-                                                <div className="p-5 flex flex-col items-center justify-center text-center h-full relative z-10">
-                                                    <div className={`w-14 h-14 rounded-2xl ${colors.iconBg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
-                                                        <FolderOpen className={`h-8 w-8 ${colors.textColor}`} />
-                                                    </div>
-                                                    <h3 className={`text-xl font-bold ${colors.textColor}`}>{yearData.year}</h3>
-                                                    <p className="text-xs text-muted-foreground mt-1">{yearData.periods.length} Evaluation Periods</p>
-                                                </div>
-                                            </Card>
-                                        )
-                                    })}
-                                </div>
-                            </>
-                        )}
-
-                        {/* LEVEL 1.5: History Type Selection */}
-                        {viewLevel === "history-type-selection" && (
-                            <>
-                                <div className="flex items-center gap-2 mb-8">
+                    {/* LEVEL 1: Years */}
+                    {viewLevel === "years" && (
+                        <>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                                <div className="flex items-center gap-2">
                                     <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
                                         <Calendar className="h-5 w-5 text-blue-600" />
                                     </div>
                                     <div>
-                                        <CardTitle className="text-xl font-bold text-gray-900">Archives for {selectedYear}</CardTitle>
-                                        <CardDescription>Choose how you want to browse the archived data</CardDescription>
+                                        <CardTitle className="text-xl font-bold text-gray-900">Evaluation Library</CardTitle>
+                                        <CardDescription>Select a year to view archived evaluations</CardDescription>
                                     </div>
                                 </div>
-
-                                <div className="grid gap-8 sm:grid-cols-2 max-w-4xl mx-auto px-4">
-                                    <Card
-                                        className="group cursor-pointer transition-all duration-500 border-2 border-blue-100 hover:border-blue-500 bg-white hover:shadow-2xl hover:scale-[1.03] relative overflow-hidden flex flex-col items-center text-center p-8 group"
-                                        onClick={() => handleHistoryTypeSelect("evaluation")}
-                                    >
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-10 -mt-10 group-hover:bg-blue-100 transition-colors" />
-                                        <div className="w-24 h-24 rounded-3xl bg-blue-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 shadow-sm border border-blue-100">
-                                            <FolderOpen className="h-12 w-12 text-blue-600" />
-                                        </div>
-                                        <h3 className="text-2xl font-bold text-gray-900 mb-3 group-hover:text-blue-600 transition-colors">Evaluation History</h3>
-                                        <p className="text-muted-foreground text-sm leading-relaxed max-w-[240px]">
-                                            Browse through detailed evaluation periods, departments, and individual professor performance results.
-                                        </p>
-                                        <div className="mt-8 flex items-center gap-2 text-blue-600 font-semibold opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
-                                            <span>Open Archive</span>
-                                            <ChevronRight className="h-4 w-4" />
-                                        </div>
-                                    </Card>
-
-                                    <Card
-                                        className="group cursor-pointer transition-all duration-500 border-2 border-purple-100 hover:border-purple-500 bg-white hover:shadow-2xl hover:scale-[1.03] relative overflow-hidden flex flex-col items-center text-center p-8"
-                                        onClick={() => handleHistoryTypeSelect("performance")}
-                                    >
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 group-hover:bg-purple-100 transition-colors" />
-                                        <div className="w-24 h-24 rounded-3xl bg-purple-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-500 shadow-sm border border-purple-100">
-                                            <TrendingUp className="h-12 w-12 text-purple-600" />
-                                        </div>
-                                        <h3 className="text-2xl font-bold text-gray-900 mb-3 group-hover:text-purple-600 transition-colors">Performance History</h3>
-                                        <p className="text-muted-foreground text-sm leading-relaxed max-w-[240px]">
-                                            View summarized performance rankings, top performing professors, and historical trends for this year.
-                                        </p>
-                                        <div className="mt-8 flex items-center gap-2 text-purple-600 font-semibold opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
-                                            <span>View Rankings</span>
-                                            <ChevronRight className="h-4 w-4" />
-                                        </div>
-                                    </Card>
+                                <div className="relative w-full sm:w-64">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Search years..."
+                                        value={yearsSearch}
+                                        onChange={(e) => setYearsSearch(e.target.value)}
+                                        className="pl-9 h-9"
+                                    />
                                 </div>
-                            </>
-                        )}
+                            </div>
 
-                        {/* LEVEL 2: Periods */}
-                        {viewLevel === "periods" && (
-                            <>
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                                {historyByYears.filter(y => {
+                                    if (!yearsSearch) return true
+                                    return y.year.toString().includes(yearsSearch)
+                                }).map((yearData, index) => {
+                                    const colors = colorSchemes[index % colorSchemes.length]
+                                    return (
+                                        <Card
+                                            key={yearData.year}
+                                            className={`group cursor-pointer transition-all duration-300 border-2 ${colors.border} ${colors.hoverBorder} bg-gradient-to-br ${colors.gradient} hover:shadow-lg hover:scale-[1.02] relative overflow-hidden h-40`}
+                                            onClick={() => handleYearClick(yearData.year)}
+                                        >
+                                            <div className="p-5 flex flex-col items-center justify-center text-center h-full relative z-10">
+                                                <div className={`w-14 h-14 rounded-2xl ${colors.iconBg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
+                                                    <FolderOpen className={`h-8 w-8 ${colors.textColor}`} />
+                                                </div>
+                                                <h3 className={`text-xl font-bold ${colors.textColor}`}>{yearData.year}</h3>
+                                                <p className="text-xs text-muted-foreground mt-1">{yearData.periods.length} Evaluation Periods</p>
+                                            </div>
+                                        </Card>
+                                    )
+                                })}
+                            </div>
+                        </>
+                    )}
+
+                    {/* LEVEL 1.5: History Type Selection */}
+                    {viewLevel === "history-type-selection" && (
+                        <>
+                            <div className="flex items-center gap-2 mb-8">
+                                <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
+                                    <Calendar className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <CardTitle className="text-xl font-bold text-gray-900">Archives for {selectedYear}</CardTitle>
+                                    <CardDescription>Choose how you want to browse the archived data</CardDescription>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-8 sm:grid-cols-2 max-w-4xl mx-auto px-4">
+                                <Card
+                                    className="group cursor-pointer transition-all duration-500 border-2 border-blue-100 hover:border-blue-500 bg-white hover:shadow-2xl hover:scale-[1.03] relative overflow-hidden flex flex-col items-center text-center p-8 group"
+                                    onClick={() => handleHistoryTypeSelect("evaluation")}
+                                >
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-10 -mt-10 group-hover:bg-blue-100 transition-colors" />
+                                    <div className="w-24 h-24 rounded-3xl bg-blue-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500 shadow-sm border border-blue-100">
+                                        <FolderOpen className="h-12 w-12 text-blue-600" />
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-3 group-hover:text-blue-600 transition-colors">Evaluation History</h3>
+                                    <p className="text-muted-foreground text-sm leading-relaxed max-w-[240px]">
+                                        Browse through detailed evaluation periods, departments, and individual professor performance results.
+                                    </p>
+                                    <div className="mt-8 flex items-center gap-2 text-blue-600 font-semibold opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                                        <span>Open Archive</span>
+                                        <ChevronRight className="h-4 w-4" />
+                                    </div>
+                                </Card>
+
+                                <Card
+                                    className="group cursor-pointer transition-all duration-500 border-2 border-purple-100 hover:border-purple-500 bg-white hover:shadow-2xl hover:scale-[1.03] relative overflow-hidden flex flex-col items-center text-center p-8"
+                                    onClick={() => handleHistoryTypeSelect("performance")}
+                                >
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 group-hover:bg-purple-100 transition-colors" />
+                                    <div className="w-24 h-24 rounded-3xl bg-purple-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-500 shadow-sm border border-purple-100">
+                                        <TrendingUp className="h-12 w-12 text-purple-600" />
+                                    </div>
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-3 group-hover:text-purple-600 transition-colors">Performance History</h3>
+                                    <p className="text-muted-foreground text-sm leading-relaxed max-w-[240px]">
+                                        View summarized performance rankings, top performing professors, and historical trends for this year.
+                                    </p>
+                                    <div className="mt-8 flex items-center gap-2 text-purple-600 font-semibold opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+                                        <span>View Rankings</span>
+                                        <ChevronRight className="h-4 w-4" />
+                                    </div>
+                                </Card>
+                            </div>
+                        </>
+                    )}
+
+                    {/* LEVEL 2: Periods */}
+                    {viewLevel === "periods" && (
+                        <>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100">
+                                        {historyType === "performance" ? (
+                                            <TrendingUp className="h-5 w-5 text-indigo-600" />
+                                        ) : (
+                                            <Calendar className="h-5 w-5 text-indigo-600" />
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100">
-                                            {historyType === "performance" ? (
-                                                <TrendingUp className="h-5 w-5 text-indigo-600" />
-                                            ) : (
-                                                <Calendar className="h-5 w-5 text-indigo-600" />
-                                            )}
+                                        <CardTitle className="text-xl font-bold text-gray-900">
+                                            {historyType === "performance" ? "Performance Dates" : "Evaluation Periods"} in {selectedYear}
+                                        </CardTitle>
+                                        <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
+                                            {periodsForYear.length} {historyType === "performance" ? "dates" : "periods"}
+                                        </Badge>
+                                    </div>
+                                </div>
+                                <div className="relative w-full sm:w-64">
+                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Search periods..."
+                                        value={periodsSearch}
+                                        onChange={(e) => setPeriodsSearch(e.target.value)}
+                                        className="pl-9 h-9"
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                {periodsForYear.filter(period => {
+                                    if (!periodsSearch) return true
+                                    const dateStr = `${period.startDate.toLocaleDateString()} - ${period.endDate.toLocaleDateString()}`
+                                    return dateStr.toLowerCase().includes(periodsSearch.toLowerCase())
+                                }).map((period, index) => {
+                                    const isPerformance = historyType === "performance"
+                                    const palette = [
+                                        { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
+                                        { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
+                                        { bg: "bg-purple-50/50", border: "border-purple-200", icon: "bg-purple-100 text-purple-600", chevron: "text-purple-400" },
+                                        { bg: "bg-pink-50/50", border: "border-pink-200", icon: "bg-pink-100 text-pink-600", chevron: "text-pink-400" },
+                                        { bg: "bg-amber-50/50", border: "border-amber-200", icon: "bg-amber-100 text-amber-600", chevron: "text-amber-400" },
+                                        { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
+                                    ]
+                                    const color = palette[index % palette.length]
+                                    const icon = isPerformance ? <TrendingUp className="h-6 w-6" /> : <Calendar className="h-6 w-6" />
+
+                                    return (
+                                        <Card
+                                            key={period.id}
+                                            className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
+                                            onClick={() => handlePeriodClick(period.id)}
+                                        >
+                                            <CardContent className="p-4 sm:p-5 flex items-center justify-between">
+                                                <div className="flex items-center gap-4">
+                                                    <div className={`w-12 h-12 rounded-xl ${color.icon} flex items-center justify-center transition-colors shadow-sm`}>
+                                                        {icon}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors">
+                                                            {period.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {period.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                        </h4>
+                                                        <div className="flex items-center gap-2 mt-1.5">
+                                                            <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-1 rounded-lg border border-gray-100 shadow-sm">
+                                                                <Users className="h-3 w-3" />
+                                                                {period.professorCount} professor{period.professorCount !== 1 ? 's' : ''}
+                                                            </span>
+                                                            <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-1 rounded-lg border border-gray-100 shadow-sm">
+                                                                <FileText className="h-3 w-3" />
+                                                                {period.totalEvaluations} eval{period.totalEvaluations !== 1 ? 's' : ''}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <ChevronRight className={`h-5 w-5 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
+                                            </CardContent>
+                                        </Card>
+                                    )
+                                })}
+                            </div>
+                        </>
+                    )}
+
+                    {/* LEVEL 2.5: Performance Rankings */}
+                    {viewLevel === "performance-rankings" && selectedPeriod && (
+                        <>
+                            <div className="flex flex-col gap-6 mb-6">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border border-purple-100 shadow-sm">
+                                            <TrendingUp className="h-6 w-6 text-purple-600" />
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <CardTitle className="text-xl font-bold text-gray-900">
-                                                {historyType === "performance" ? "Performance Dates" : "Evaluation Periods"} in {selectedYear}
+                                        <div>
+                                            <CardTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
+                                                Performance Rankings
                                             </CardTitle>
-                                            <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
-                                                {periodsForYear.length} {historyType === "performance" ? "dates" : "periods"}
-                                            </Badge>
+                                            <CardDescription className="flex items-center gap-1.5 mt-0.5">
+                                                <Calendar className="h-3.5 w-3.5" />
+                                                {formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}
+                                            </CardDescription>
                                         </div>
                                     </div>
-                                    <div className="relative w-full sm:w-64">
-                                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-10 gap-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all shadow-sm font-semibold"
+                                        onClick={handleExportAllPDF}
+                                    >
+                                        <FileDown className="h-4 w-4" />
+                                        Export All PDF
+                                    </Button>
+                                </div>
+
+                                {/* Category Tabs */}
+                                <div className="bg-muted/30 p-1.5 rounded-xl">
+                                    <Tabs value={performanceCategory} onValueChange={setPerformanceCategory} className="w-full">
+                                        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-auto gap-1.5 bg-transparent p-0">
+                                            {performanceCategories.map((cat) => (
+                                                <TabsTrigger
+                                                    key={cat}
+                                                    value={cat}
+                                                    className="text-[11px] sm:text-xs py-3 px-2 font-medium data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-md rounded-lg transition-all border border-transparent data-[state=active]:border-primary/10 whitespace-normal text-center min-h-[44px]"
+                                                >
+                                                    {cat}
+                                                </TabsTrigger>
+                                            ))}
+                                        </TabsList>
+                                    </Tabs>
+                                </div>
+
+                                {/* Search & Sort Controls */}
+                                <div className="flex flex-col sm:flex-row gap-4">
+                                    <div className="flex-1 relative group">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-glow-primary transition-colors" />
                                         <Input
-                                            placeholder="Search periods..."
-                                            value={periodsSearch}
-                                            onChange={(e) => setPeriodsSearch(e.target.value)}
-                                            className="pl-9 h-9"
+                                            placeholder="Search by professor or dept..."
+                                            value={performanceSearch}
+                                            onChange={(e) => setPerformanceSearch(e.target.value)}
+                                            className="pl-9 h-11 border-2 focus-visible:ring-0 focus-visible:border-primary/50 transition-all rounded-xl bg-white/50"
                                         />
                                     </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant={performanceSortBy === "score" ? "default" : "outline"}
+                                            size="sm"
+                                            onClick={() => {
+                                                if (performanceSortBy === "score") {
+                                                    setPerformanceSortOrder(performanceSortOrder === "asc" ? "desc" : "asc")
+                                                } else {
+                                                    setPerformanceSortBy("score")
+                                                    setPerformanceSortOrder("desc")
+                                                }
+                                            }}
+                                            className="h-11 px-4 gap-2 rounded-xl transition-all shadow-sm"
+                                        >
+                                            <ArrowUpDown className="h-4 w-4" />
+                                            Score {performanceSortBy === "score" && (performanceSortOrder === "desc" ? "↓" : "↑")}
+                                        </Button>
+                                        <Button
+                                            variant={performanceSortBy === "department" ? "default" : "outline"}
+                                            size="sm"
+                                            onClick={() => {
+                                                if (performanceSortBy === "department") {
+                                                    setPerformanceSortOrder(performanceSortOrder === "asc" ? "desc" : "asc")
+                                                } else {
+                                                    setPerformanceSortBy("department")
+                                                    setPerformanceSortOrder("desc")
+                                                }
+                                            }}
+                                            className="h-11 px-4 gap-2 rounded-xl transition-all shadow-sm"
+                                        >
+                                            <ArrowUpDown className="h-4 w-4" />
+                                            Dept {performanceSortBy === "department" && (performanceSortOrder === "desc" ? "↓" : "↑")}
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    {periodsForYear.filter(period => {
-                                        if (!periodsSearch) return true
-                                        const dateStr = `${period.startDate.toLocaleDateString()} - ${period.endDate.toLocaleDateString()}`
-                                        return dateStr.toLowerCase().includes(periodsSearch.toLowerCase())
-                                    }).map((period, index) => {
-                                        const isPerformance = historyType === "performance"
+                            </div>
+
+                            <div className="border border-gray-100 rounded-lg overflow-hidden bg-white shadow-sm relative">
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader className="bg-white border-b border-gray-100">
+                                            <TableRow className="hover:bg-transparent">
+                                                <TableHead className="w-[60px] text-[11px] font-semibold text-gray-500 py-3 px-4">Rank</TableHead>
+                                                <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4">Professor</TableHead>
+                                                <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4">Dept</TableHead>
+                                                <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4 text-center">Performance</TableHead>
+                                                <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4 text-center">Average Score</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {(() => {
+                                                const flattenedEvaluations = selectedPeriod.professorEvaluations.flatMap(p => p.evaluations)
+                                                const rankingsByCategory = evaluationResultsService.calculateTopPerformingProfessorsByCategory(
+                                                    flattenedEvaluations,
+                                                    questions,
+                                                    999
+                                                )
+                                                const categoryData = rankingsByCategory[performanceCategory] || []
+                                                let filtered = [...categoryData]
+                                                if (performanceSearch) {
+                                                    const term = performanceSearch.toLowerCase()
+                                                    filtered = filtered.filter(p =>
+                                                        p.professorName.toLowerCase().includes(term) ||
+                                                        p.departmentName.toLowerCase().includes(term)
+                                                    )
+                                                }
+
+                                                // Prepare global rank map based on score with name as tie-breaker
+                                                const globalSorted = [...categoryData].sort((a, b) => {
+                                                    const scoreDiff = b.averageRating - a.averageRating
+                                                    if (scoreDiff !== 0) return scoreDiff
+                                                    return a.professorName.localeCompare(b.professorName)
+                                                })
+                                                const rankMap = new Map<string, number>()
+                                                globalSorted.forEach((p, i) => rankMap.set(p.professorId, i + 1))
+
+                                                // CONDITIONAL RENDERING: Grouped vs Flat
+                                                if (performanceSortBy === "department") {
+                                                    // Group by department
+                                                    const groups: { [dept: string]: TopProfessorData[] } = {}
+                                                    filtered.forEach(p => {
+                                                        const dept = p.departmentName || "General"
+                                                        if (!groups[dept]) groups[dept] = []
+                                                        groups[dept].push(p)
+                                                    })
+
+                                                    // Sort groups by their top ranked professor's global rank
+                                                    const sortedDepts = Object.keys(groups).sort((a, b) => {
+                                                        const minRankA = Math.min(...groups[a].map(p => rankMap.get(p.professorId) || 999))
+                                                        const minRankB = Math.min(...groups[b].map(p => rankMap.get(p.professorId) || 999))
+                                                        return performanceSortOrder === "asc" ? minRankB - minRankA : minRankA - minRankB
+                                                    })
+
+                                                    if (sortedDepts.length === 0) {
+                                                        return (
+                                                            <TableRow>
+                                                                <TableCell colSpan={5} className="text-center py-24">
+                                                                    <div className="flex flex-col items-center justify-center space-y-4">
+                                                                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
+                                                                            <Search className="h-8 w-8 text-gray-300" />
+                                                                        </div>
+                                                                        <div className="text-gray-400 font-medium text-xs tracking-wider">No records found matching search</div>
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        )
+                                                    }
+
+                                                    return (
+                                                        <>
+                                                            {sortedDepts.map(dept => (
+                                                                <Fragment key={dept}>
+                                                                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-l-4 border-l-primary/40">
+                                                                        <TableCell colSpan={5} className="py-2 px-4 border-b border-gray-100">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="w-1.5 h-1.5 rounded-full bg-primary/60" />
+                                                                                <span className="font-bold text-primary/80 text-[10px] uppercase tracking-widest">Dept: {dept}</span>
+                                                                                <span className="text-[10px] text-gray-400 font-normal">
+                                                                                    ({groups[dept].length} PROFESSOR{groups[dept].length !== 1 ? 'S' : ''})
+                                                                                </span>
+                                                                            </div>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                    {groups[dept].sort((a, b) => {
+                                                                        const scoreDiff = b.averageRating - a.averageRating
+                                                                        if (scoreDiff !== 0) return scoreDiff
+                                                                        return a.professorName.localeCompare(b.professorName)
+                                                                    }).map((professor) => {
+                                                                        const rank = rankMap.get(professor.professorId) || 0
+                                                                        return (
+                                                                            <TableRow key={professor.professorId} className="group hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                                                <TableCell className="py-2 px-4">
+                                                                                    <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs ${getRankBadgeColor(rank - 1)}`}>
+                                                                                        {rank}
+                                                                                    </div>
+                                                                                </TableCell>
+                                                                                <TableCell className="py-2 px-4">
+                                                                                    <div className="font-bold text-[#374151] text-sm">{professor.professorName}</div>
+                                                                                </TableCell>
+                                                                                <TableCell className="py-2 px-4">
+                                                                                    <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                                                                                        {professor.departmentName}
+                                                                                    </div>
+                                                                                </TableCell>
+                                                                                <TableCell className="py-2 px-4">
+                                                                                    <div className="space-y-1 w-full max-w-[150px] mx-auto">
+                                                                                        <div className="relative h-2.5 w-full bg-[#F3F4F6] rounded-full overflow-hidden shadow-inner p-[1px]">
+                                                                                            <div
+                                                                                                className={`h-full transition-all duration-700 ease-out rounded-full ${getProgressBarColor(professor.averageRating)}`}
+                                                                                                style={{ width: `${(professor.averageRating / 5) * 100}%` }}
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div className="flex justify-center">
+                                                                                            <Badge variant="outline" className={`text-[8px] px-1.5 h-3.5 font-bold uppercase tracking-wider ${getPerformanceBadgeStyle(professor.averageRating)}`}>
+                                                                                                {getPerformanceLabel(professor.averageRating)}
+                                                                                            </Badge>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </TableCell>
+                                                                                <TableCell className="py-2 px-4 text-center">
+                                                                                    <div className={`font-bold text-base ${professor.averageRating >= 5.00 ? 'text-[#FF6B00]' : 'text-[#374151]'}`}>
+                                                                                        {professor.averageRating.toFixed(2)}
+                                                                                    </div>
+                                                                                </TableCell>
+                                                                            </TableRow>
+                                                                        )
+                                                                    })}
+                                                                </Fragment>
+                                                            ))}
+                                                            {/* Summary Footer */}
+                                                            <TableRow className="bg-white hover:bg-white border-t border-gray-100">
+                                                                <TableCell colSpan={5} className="py-3 px-4">
+                                                                    <div className="text-[11px] text-gray-400">
+                                                                        Showing {filtered.length} of {categoryData.length} professors in {performanceCategory}
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        </>
+                                                    )
+                                                } else {
+                                                    // Flat List sorting
+                                                    const flatList = [...filtered].sort((a, b) => {
+                                                        let comparison = 0
+                                                        if (performanceSortBy === "score") {
+                                                            comparison = b.averageRating - a.averageRating
+                                                            if (comparison === 0) comparison = a.professorName.localeCompare(b.professorName)
+                                                        } else if (performanceSortBy === "name") {
+                                                            comparison = a.professorName.localeCompare(b.professorName)
+                                                        }
+                                                        return performanceSortOrder === "asc" ? -comparison : comparison
+                                                    })
+
+                                                    if (flatList.length === 0) {
+                                                        return (
+                                                            <TableRow>
+                                                                <TableCell colSpan={5} className="text-center py-24">
+                                                                    <div className="flex flex-col items-center justify-center space-y-4">
+                                                                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
+                                                                            <Search className="h-8 w-8 text-gray-300" />
+                                                                        </div>
+                                                                        <div className="text-gray-400 font-medium text-xs tracking-wider">No records found matching search</div>
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        )
+                                                    }
+
+                                                    return (
+                                                        <>
+                                                            {flatList.map((professor) => {
+                                                                const rank = rankMap.get(professor.professorId) || 0
+                                                                return (
+                                                                    <TableRow key={professor.professorId} className="group hover:bg-gray-50 border-b border-gray-50 transition-colors">
+                                                                        <TableCell className="py-2 px-4">
+                                                                            <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs ${getRankBadgeColor(rank - 1)}`}>
+                                                                                {rank}
+                                                                            </div>
+                                                                        </TableCell>
+                                                                        <TableCell className="py-2 px-4">
+                                                                            <div className="font-bold text-[#374151] text-sm">{professor.professorName}</div>
+                                                                        </TableCell>
+                                                                        <TableCell className="py-2 px-4">
+                                                                            <div className="text-xs text-gray-500 truncate max-w-[200px]">
+                                                                                {professor.departmentName}
+                                                                            </div>
+                                                                        </TableCell>
+                                                                        <TableCell className="py-2 px-4">
+                                                                            <div className="space-y-1 w-full max-w-[150px] mx-auto">
+                                                                                <div className="relative h-2.5 w-full bg-[#F3F4F6] rounded-full overflow-hidden shadow-inner p-[1px]">
+                                                                                    <div
+                                                                                        className={`h-full transition-all duration-700 ease-out rounded-full ${getProgressBarColor(professor.averageRating)}`}
+                                                                                        style={{ width: `${(professor.averageRating / 5) * 100}%` }}
+                                                                                    />
+                                                                                </div>
+                                                                                <div className="flex justify-center">
+                                                                                    <Badge variant="outline" className={`text-[8px] px-1.5 h-3.5 font-bold uppercase tracking-wider ${getPerformanceBadgeStyle(professor.averageRating)}`}>
+                                                                                        {getPerformanceLabel(professor.averageRating)}
+                                                                                    </Badge>
+                                                                                </div>
+                                                                            </div>
+                                                                        </TableCell>
+                                                                        <TableCell className="py-2 px-4 text-center">
+                                                                            <div className={`font-bold text-base ${professor.averageRating >= 5.00 ? 'text-[#FF6B00]' : 'text-[#374151]'}`}>
+                                                                                {professor.averageRating.toFixed(2)}
+                                                                            </div>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                )
+                                                            })}
+                                                            {/* Summary Footer */}
+                                                            <TableRow className="bg-white hover:bg-white border-t border-gray-100">
+                                                                <TableCell colSpan={5} className="py-3 px-4">
+                                                                    <div className="text-[11px] text-gray-400">
+                                                                        Showing {flatList.length} of {categoryData.length} professors in {performanceCategory}
+                                                                    </div>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        </>
+                                                    )
+                                                }
+                                            })()}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {/* LEVEL 3: Departments */}
+                    {viewLevel === "departments" && selectedPeriod && (
+                        <>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-2 rounded-lg bg-purple-50 border border-purple-100">
+                                        <Folder className="h-5 w-5 text-purple-600" />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <CardTitle className="text-xl font-bold text-gray-900">Departments</CardTitle>
+                                        <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
+                                            {(() => {
+                                                const departments = new Set<string>()
+                                                selectedPeriod.professorEvaluations.forEach(prof => {
+                                                    if (prof.departmentName) departments.add(prof.departmentName)
+                                                })
+                                                return departments.size
+                                            })()} departments
+                                        </Badge>
+                                    </div>
+                                </div>
+                                <div className="relative w-full sm:w-64">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                    <Input
+                                        placeholder="Search departments..."
+                                        value={departmentsSearch}
+                                        onChange={(e) => setDepartmentsSearch(e.target.value)}
+                                        className="pl-9 h-9"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {(() => {
+                                    const departments = new Set<string>()
+                                    selectedPeriod.professorEvaluations.forEach(prof => {
+                                        if (prof.departmentName) departments.add(prof.departmentName)
+                                    })
+                                    return Array.from(departments).sort().filter(dept => {
+                                        if (!departmentsSearch) return true
+                                        return dept.toLowerCase().includes(departmentsSearch.toLowerCase())
+                                    }).map((dept, index) => {
                                         const palette = [
                                             { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
                                             { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
@@ -1301,412 +1787,82 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                             { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
                                         ]
                                         const color = palette[index % palette.length]
-                                        const icon = isPerformance ? <TrendingUp className="h-6 w-6" /> : <Calendar className="h-6 w-6" />
-
+                                        const deptProfs = selectedPeriod.professorEvaluations.filter(p => p.departmentName === dept)
+                                        const totalEvals = deptProfs.reduce((sum, p) => sum + p.evaluations.length, 0)
                                         return (
                                             <Card
-                                                key={period.id}
+                                                key={dept}
                                                 className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
-                                                onClick={() => handlePeriodClick(period.id)}
+                                                onClick={() => handleDepartmentClick(dept)}
                                             >
                                                 <CardContent className="p-4 sm:p-5 flex items-center justify-between">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`w-12 h-12 rounded-xl ${color.icon} flex items-center justify-center transition-colors shadow-sm`}>
-                                                            {icon}
+                                                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                                                        <div className={`w-12 h-12 rounded-xl flex-shrink-0 ${color.icon} flex items-center justify-center transition-colors shadow-sm`}>
+                                                            <Folder className="h-6 w-6" />
                                                         </div>
-                                                        <div>
-                                                            <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors">
-                                                                {period.startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {period.endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                        <div className="min-w-0">
+                                                            <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors line-clamp-2 text-sm leading-tight">
+                                                                {dept}
                                                             </h4>
-                                                            <div className="flex items-center gap-2 mt-1.5">
-                                                                <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-1 rounded-lg border border-gray-100 shadow-sm">
+                                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
                                                                     <Users className="h-3 w-3" />
-                                                                    {period.professorCount} professor{period.professorCount !== 1 ? 's' : ''}
+                                                                    {deptProfs.length} professor{deptProfs.length !== 1 ? 's' : ''}
                                                                 </span>
-                                                                <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-1 rounded-lg border border-gray-100 shadow-sm">
+                                                                <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
                                                                     <FileText className="h-3 w-3" />
-                                                                    {period.totalEvaluations} eval{period.totalEvaluations !== 1 ? 's' : ''}
+                                                                    {totalEvals} eval{totalEvals !== 1 ? 's' : ''}
                                                                 </span>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <ChevronRight className={`h-5 w-5 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
+                                                    <ChevronRight className={`h-5 w-5 flex-shrink-0 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
                                                 </CardContent>
                                             </Card>
                                         )
-                                    })}
-                                </div>
-                            </>
-                        )}
+                                    })
+                                })()}
+                            </div>
+                        </>
+                    )}
 
-                        {/* LEVEL 2.5: Performance Rankings */}
-                        {viewLevel === "performance-rankings" && selectedPeriod && (
-                            <>
-                                <div className="flex flex-col gap-6 mb-6">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border border-purple-100 shadow-sm">
-                                                <TrendingUp className="h-6 w-6 text-purple-600" />
+                    {/* LEVEL 4: Professors */}
+                    {viewLevel === "professors" && (
+                        <>
+                            {isLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                    <span className="ml-2 text-muted-foreground">Loading professors...</span>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 rounded-lg bg-green-50 border border-green-100">
+                                                <Users className="h-5 w-5 text-green-600" />
                                             </div>
-                                            <div>
-                                                <CardTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600">
-                                                    Performance Rankings
-                                                </CardTitle>
-                                                <CardDescription className="flex items-center gap-1.5 mt-0.5">
-                                                    <Calendar className="h-3.5 w-3.5" />
-                                                    {formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}
-                                                </CardDescription>
+                                            <div className="flex items-center gap-2">
+                                                <CardTitle className="text-xl font-bold text-gray-900">Professors</CardTitle>
+                                                <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
+                                                    {professorsForDepartment.length} professors
+                                                </Badge>
                                             </div>
                                         </div>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-10 gap-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all shadow-sm font-semibold"
-                                            onClick={handleExportAllPDF}
-                                        >
-                                            <FileDown className="h-4 w-4" />
-                                            Export All PDF
-                                        </Button>
-                                    </div>
-
-                                    {/* Category Tabs */}
-                                    <div className="bg-muted/30 p-1.5 rounded-xl">
-                                        <Tabs value={performanceCategory} onValueChange={setPerformanceCategory} className="w-full">
-                                            <TabsList className="grid w-full grid-cols-2 md:grid-cols-5 h-auto gap-1.5 bg-transparent p-0">
-                                                {performanceCategories.map((cat) => (
-                                                    <TabsTrigger
-                                                        key={cat}
-                                                        value={cat}
-                                                        className="text-[11px] sm:text-xs py-3 px-2 font-medium data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-md rounded-lg transition-all border border-transparent data-[state=active]:border-primary/10 whitespace-normal text-center min-h-[44px]"
-                                                    >
-                                                        {cat}
-                                                    </TabsTrigger>
-                                                ))}
-                                            </TabsList>
-                                        </Tabs>
-                                    </div>
-
-                                    {/* Search & Sort Controls */}
-                                    <div className="flex flex-col sm:flex-row gap-4">
-                                        <div className="flex-1 relative group">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-glow-primary transition-colors" />
+                                        <div className="relative w-full sm:w-64">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                             <Input
-                                                placeholder="Search by professor or dept..."
-                                                value={performanceSearch}
-                                                onChange={(e) => setPerformanceSearch(e.target.value)}
-                                                className="pl-9 h-11 border-2 focus-visible:ring-0 focus-visible:border-primary/50 transition-all rounded-xl bg-white/50"
+                                                placeholder="Search professors..."
+                                                value={professorsSearch}
+                                                onChange={(e) => setProfessorsSearch(e.target.value)}
+                                                className="pl-9 h-9"
                                             />
                                         </div>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                variant={performanceSortBy === "score" ? "default" : "outline"}
-                                                size="sm"
-                                                onClick={() => {
-                                                    if (performanceSortBy === "score") {
-                                                        setPerformanceSortOrder(performanceSortOrder === "asc" ? "desc" : "asc")
-                                                    } else {
-                                                        setPerformanceSortBy("score")
-                                                        setPerformanceSortOrder("desc")
-                                                    }
-                                                }}
-                                                className="h-11 px-4 gap-2 rounded-xl transition-all shadow-sm"
-                                            >
-                                                <ArrowUpDown className="h-4 w-4" />
-                                                Score {performanceSortBy === "score" && (performanceSortOrder === "desc" ? "↓" : "↑")}
-                                            </Button>
-                                            <Button
-                                                variant={performanceSortBy === "department" ? "default" : "outline"}
-                                                size="sm"
-                                                onClick={() => {
-                                                    if (performanceSortBy === "department") {
-                                                        setPerformanceSortOrder(performanceSortOrder === "asc" ? "desc" : "asc")
-                                                    } else {
-                                                        setPerformanceSortBy("department")
-                                                        setPerformanceSortOrder("desc")
-                                                    }
-                                                }}
-                                                className="h-11 px-4 gap-2 rounded-xl transition-all shadow-sm"
-                                            >
-                                                <ArrowUpDown className="h-4 w-4" />
-                                                Dept {performanceSortBy === "department" && (performanceSortOrder === "desc" ? "↓" : "↑")}
-                                            </Button>
-                                        </div>
                                     </div>
-                                </div>
-
-                                <div className="border border-gray-100 rounded-lg overflow-hidden bg-white shadow-sm relative">
-                                    <div className="overflow-x-auto">
-                                        <Table>
-                                            <TableHeader className="bg-white border-b border-gray-100">
-                                                <TableRow className="hover:bg-transparent">
-                                                    <TableHead className="w-[60px] text-[11px] font-semibold text-gray-500 py-3 px-4">Rank</TableHead>
-                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4">Professor</TableHead>
-                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4">Dept</TableHead>
-                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4 text-center">Performance</TableHead>
-                                                    <TableHead className="text-[11px] font-semibold text-gray-500 py-3 px-4 text-center">Score</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {(() => {
-                                                    const flattenedEvaluations = selectedPeriod.professorEvaluations.flatMap(p => p.evaluations)
-                                                    const rankingsByCategory = evaluationResultsService.calculateTopPerformingProfessorsByCategory(
-                                                        flattenedEvaluations,
-                                                        questions,
-                                                        999
-                                                    )
-                                                    const categoryData = rankingsByCategory[performanceCategory] || []
-                                                    let filtered = [...categoryData]
-                                                    if (performanceSearch) {
-                                                        const term = performanceSearch.toLowerCase()
-                                                        filtered = filtered.filter(p => 
-                                                            p.professorName.toLowerCase().includes(term) || 
-                                                            p.departmentName.toLowerCase().includes(term)
-                                                        )
-                                                    }
-
-                                                    // Prepare global rank map based on score with name as tie-breaker
-                                                    const globalSorted = [...categoryData].sort((a, b) => {
-                                                        const scoreDiff = b.performanceScore - a.performanceScore
-                                                        if (scoreDiff !== 0) return scoreDiff
-                                                        return a.professorName.localeCompare(b.professorName)
-                                                    })
-                                                    const rankMap = new Map<string, number>()
-                                                    globalSorted.forEach((p, i) => rankMap.set(p.professorId, i + 1))
-
-                                                    // CONDITIONAL RENDERING: Grouped vs Flat
-                                                    if (performanceSortBy === "department") {
-                                                        // Group by department
-                                                        const groups: { [dept: string]: TopProfessorData[] } = {}
-                                                        filtered.forEach(p => {
-                                                            const dept = p.departmentName || "General"
-                                                            if (!groups[dept]) groups[dept] = []
-                                                            groups[dept].push(p)
-                                                        })
-
-                                                        // Sort groups by their top ranked professor's global rank
-                                                        const sortedDepts = Object.keys(groups).sort((a, b) => {
-                                                            const minRankA = Math.min(...groups[a].map(p => rankMap.get(p.professorId) || 999))
-                                                            const minRankB = Math.min(...groups[b].map(p => rankMap.get(p.professorId) || 999))
-                                                            return performanceSortOrder === "asc" ? minRankB - minRankA : minRankA - minRankB
-                                                        })
-
-                                                        if (sortedDepts.length === 0) {
-                                                            return (
-                                                                <TableRow>
-                                                                    <TableCell colSpan={5} className="text-center py-24">
-                                                                        <div className="flex flex-col items-center justify-center space-y-4">
-                                                                            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
-                                                                                <Search className="h-8 w-8 text-gray-300" />
-                                                                            </div>
-                                                                            <div className="text-gray-400 font-medium text-xs tracking-wider">No records found matching search</div>
-                                                                        </div>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            )
-                                                        }
-
-                                                        return (
-                                                            <>
-                                                                {sortedDepts.map(dept => (
-                                                                    <Fragment key={dept}>
-                                                                        <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-l-4 border-l-primary/40">
-                                                                            <TableCell colSpan={5} className="py-2 px-4 border-b border-gray-100">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-primary/60" />
-                                                                                    <span className="font-bold text-primary/80 text-[10px] uppercase tracking-widest">Dept: {dept}</span>
-                                                                                    <span className="text-[10px] text-gray-400 font-normal">
-                                                                                        ({groups[dept].length} PROFESSOR{groups[dept].length !== 1 ? 'S' : ''})
-                                                                                    </span>
-                                                                                </div>
-                                                                            </TableCell>
-                                                                        </TableRow>
-                                                                        {groups[dept].sort((a, b) => {
-                                                                            const scoreDiff = b.performanceScore - a.performanceScore
-                                                                            if (scoreDiff !== 0) return scoreDiff
-                                                                            return a.professorName.localeCompare(b.professorName)
-                                                                        }).map((professor) => {
-                                                                            const rank = rankMap.get(professor.professorId) || 0
-                                                                            return (
-                                                                                <TableRow key={professor.professorId} className="group hover:bg-gray-50 border-b border-gray-50 transition-colors">
-                                                                                    <TableCell className="py-2 px-4">
-                                                                                        <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs ${getRankBadgeColor(rank - 1)}`}>
-                                                                                            {rank}
-                                                                                        </div>
-                                                                                    </TableCell>
-                                                                                    <TableCell className="py-2 px-4">
-                                                                                        <div className="font-bold text-[#374151] text-sm">{professor.professorName}</div>
-                                                                                    </TableCell>
-                                                                                    <TableCell className="py-2 px-4">
-                                                                                        <div className="text-xs text-gray-500 truncate max-w-[200px]">
-                                                                                            {professor.departmentName}
-                                                                                        </div>
-                                                                                    </TableCell>
-                                                                                    <TableCell className="py-2 px-4">
-                                                                                        <div className="space-y-1 w-full max-w-[150px] mx-auto">
-                                                                                            <div className="relative h-2.5 w-full bg-[#F3F4F6] rounded-full overflow-hidden shadow-inner p-[1px]">
-                                                                                                <div
-                                                                                                    className={`h-full transition-all duration-700 ease-out rounded-full ${getProgressBarColor(professor.performanceScore)}`}
-                                                                                                    style={{ width: `${professor.performanceScore}%` }}
-                                                                                                />
-                                                                                            </div>
-                                                                                            <div className="flex justify-center">
-                                                                                                <Badge variant="outline" className={`text-[8px] px-1.5 h-3.5 font-bold uppercase tracking-wider ${getPerformanceBadgeStyle(professor.performanceScore)}`}>
-                                                                                                    {getPerformanceLabel(professor.performanceScore)}
-                                                                                                </Badge>
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    </TableCell>
-                                                                                    <TableCell className="py-2 px-4 text-center">
-                                                                                        <div className={`font-bold text-base ${professor.performanceScore === 100 ? 'text-[#FF6B00]' : 'text-[#374151]'}`}>
-                                                                                            {professor.performanceScore}%
-                                                                                        </div>
-                                                                                    </TableCell>
-                                                                                </TableRow>
-                                                                            )
-                                                                        })}
-                                                                    </Fragment>
-                                                                ))}
-                                                                {/* Summary Footer */}
-                                                                <TableRow className="bg-white hover:bg-white border-t border-gray-100">
-                                                                    <TableCell colSpan={5} className="py-3 px-4">
-                                                                        <div className="text-[11px] text-gray-400">
-                                                                            Showing {filtered.length} of {categoryData.length} professors in {performanceCategory}
-                                                                        </div>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            </>
-                                                        )
-                                                    } else {
-                                                        // Flat List sorting
-                                                        const flatList = [...filtered].sort((a, b) => {
-                                                            let comparison = 0
-                                                            if (performanceSortBy === "score") {
-                                                                comparison = b.performanceScore - a.performanceScore
-                                                                if (comparison === 0) comparison = a.professorName.localeCompare(b.professorName)
-                                                            } else if (performanceSortBy === "name") {
-                                                                comparison = a.professorName.localeCompare(b.professorName)
-                                                            }
-                                                            return performanceSortOrder === "asc" ? -comparison : comparison
-                                                        })
-
-                                                        if (flatList.length === 0) {
-                                                            return (
-                                                                <TableRow>
-                                                                    <TableCell colSpan={5} className="text-center py-24">
-                                                                        <div className="flex flex-col items-center justify-center space-y-4">
-                                                                            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
-                                                                                <Search className="h-8 w-8 text-gray-300" />
-                                                                            </div>
-                                                                            <div className="text-gray-400 font-medium text-xs tracking-wider">No records found matching search</div>
-                                                                        </div>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            )
-                                                        }
-
-                                                        return (
-                                                            <>
-                                                                {flatList.map((professor) => {
-                                                                    const rank = rankMap.get(professor.professorId) || 0
-                                                                    return (
-                                                                        <TableRow key={professor.professorId} className="group hover:bg-gray-50 border-b border-gray-50 transition-colors">
-                                                                            <TableCell className="py-2 px-4">
-                                                                                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs ${getRankBadgeColor(rank - 1)}`}>
-                                                                                    {rank}
-                                                                                </div>
-                                                                            </TableCell>
-                                                                            <TableCell className="py-2 px-4">
-                                                                                <div className="font-bold text-[#374151] text-sm">{professor.professorName}</div>
-                                                                            </TableCell>
-                                                                            <TableCell className="py-2 px-4">
-                                                                                <div className="text-xs text-gray-500 truncate max-w-[200px]">
-                                                                                    {professor.departmentName}
-                                                                                </div>
-                                                                            </TableCell>
-                                                                            <TableCell className="py-2 px-4">
-                                                                                <div className="space-y-1 w-full max-w-[150px] mx-auto">
-                                                                                    <div className="relative h-2.5 w-full bg-[#F3F4F6] rounded-full overflow-hidden shadow-inner p-[1px]">
-                                                                                        <div
-                                                                                            className={`h-full transition-all duration-700 ease-out rounded-full ${getProgressBarColor(professor.performanceScore)}`}
-                                                                                            style={{ width: `${professor.performanceScore}%` }}
-                                                                                        />
-                                                                                    </div>
-                                                                                    <div className="flex justify-center">
-                                                                                        <Badge variant="outline" className={`text-[8px] px-1.5 h-3.5 font-bold uppercase tracking-wider ${getPerformanceBadgeStyle(professor.performanceScore)}`}>
-                                                                                            {getPerformanceLabel(professor.performanceScore)}
-                                                                                        </Badge>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </TableCell>
-                                                                            <TableCell className="py-2 px-4 text-center">
-                                                                                <div className={`font-bold text-base ${professor.performanceScore === 100 ? 'text-[#FF6B00]' : 'text-[#374151]'}`}>
-                                                                                    {professor.performanceScore}%
-                                                                                </div>
-                                                                            </TableCell>
-                                                                        </TableRow>
-                                                                    )
-                                                                })}
-                                                                {/* Summary Footer */}
-                                                                <TableRow className="bg-white hover:bg-white border-t border-gray-100">
-                                                                    <TableCell colSpan={5} className="py-3 px-4">
-                                                                        <div className="text-[11px] text-gray-400">
-                                                                            Showing {flatList.length} of {categoryData.length} professors in {performanceCategory}
-                                                                        </div>
-                                                                    </TableCell>
-                                                                </TableRow>
-                                                            </>
-                                                        )
-                                                    }
-                                                })()}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-
-                        {/* LEVEL 3: Departments */}
-                        {viewLevel === "departments" && selectedPeriod && (
-                            <>
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                                    <div className="flex items-center gap-2">
-                                        <div className="p-2 rounded-lg bg-purple-50 border border-purple-100">
-                                            <Folder className="h-5 w-5 text-purple-600" />
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <CardTitle className="text-xl font-bold text-gray-900">Departments</CardTitle>
-                                            <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
-                                                {(() => {
-                                                    const departments = new Set<string>()
-                                                    selectedPeriod.professorEvaluations.forEach(prof => {
-                                                        if (prof.departmentName) departments.add(prof.departmentName)
-                                                    })
-                                                    return departments.size
-                                                })()} departments
-                                            </Badge>
-                                        </div>
-                                    </div>
-                                    <div className="relative w-full sm:w-64">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                        <Input
-                                            placeholder="Search departments..."
-                                            value={departmentsSearch}
-                                            onChange={(e) => setDepartmentsSearch(e.target.value)}
-                                            className="pl-9 h-9"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                    {(() => {
-                                        const departments = new Set<string>()
-                                        selectedPeriod.professorEvaluations.forEach(prof => {
-                                            if (prof.departmentName) departments.add(prof.departmentName)
-                                        })
-                                        return Array.from(departments).sort().filter(dept => {
-                                            if (!departmentsSearch) return true
-                                            return dept.toLowerCase().includes(departmentsSearch.toLowerCase())
-                                        }).map((dept, index) => {
+                                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                        {professorsForDepartment.filter(prof => {
+                                            if (!professorsSearch) return true
+                                            return prof.professorName.toLowerCase().includes(professorsSearch.toLowerCase())
+                                        }).map((prof, index) => {
                                             const palette = [
                                                 { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
                                                 { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
@@ -1716,31 +1872,25 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                 { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
                                             ]
                                             const color = palette[index % palette.length]
-                                            const deptProfs = selectedPeriod.professorEvaluations.filter(p => p.departmentName === dept)
-                                            const totalEvals = deptProfs.reduce((sum, p) => sum + p.evaluations.length, 0)
                                             return (
-                                                <Card 
-                                                    key={dept} 
+                                                <Card
+                                                    key={prof.professorId}
                                                     className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
-                                                    onClick={() => handleDepartmentClick(dept)}
+                                                    onClick={() => handleProfessorClick(prof.professorId)}
                                                 >
                                                     <CardContent className="p-4 sm:p-5 flex items-center justify-between">
                                                         <div className="flex items-center gap-4 flex-1 min-w-0">
-                                                            <div className={`w-12 h-12 rounded-xl flex-shrink-0 ${color.icon} flex items-center justify-center transition-colors shadow-sm`}>
-                                                                <Folder className="h-6 w-6" />
+                                                            <div className={`w-12 h-12 rounded-full flex-shrink-0 ${color.icon} flex items-center justify-center transition-colors shadow-sm border-2 border-white`}>
+                                                                <Users className="h-6 w-6" />
                                                             </div>
                                                             <div className="min-w-0">
-                                                                <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors line-clamp-2 text-sm leading-tight">
-                                                                    {dept}
+                                                                <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors truncate text-sm leading-tight">
+                                                                    {prof.professorName}
                                                                 </h4>
                                                                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
-                                                                        <Users className="h-3 w-3" />
-                                                                        {deptProfs.length} professor{deptProfs.length !== 1 ? 's' : ''}
-                                                                    </span>
-                                                                    <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
-                                                                        <FileText className="h-3 w-3" />
-                                                                        {totalEvals} eval{totalEvals !== 1 ? 's' : ''}
+                                                                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
+                                                                        <BarChart3 className="h-3 w-3" />
+                                                                        {prof.evaluationCount} eval{prof.evaluationCount !== 1 ? 's' : ''}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -1749,381 +1899,411 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                     </CardContent>
                                                 </Card>
                                             )
-                                        })
-                                    })()}
-                                </div>
-                            </>
-                        )}
-
-                        {/* LEVEL 4: Professors */}
-                        {viewLevel === "professors" && (
-                            <>
-                                {isLoading ? (
-                                    <div className="flex items-center justify-center py-8">
-                                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                        <span className="ml-2 text-muted-foreground">Loading professors...</span>
+                                        })}
                                     </div>
-                                ) : (
-                                    <>
-                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                                            <div className="flex items-center gap-2">
-                                                <div className="p-2 rounded-lg bg-green-50 border border-green-100">
-                                                    <Users className="h-5 w-5 text-green-600" />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <CardTitle className="text-xl font-bold text-gray-900">Professors</CardTitle>
-                                                    <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-none px-2 h-5 text-[10px] font-bold">
-                                                        {professorsForDepartment.length} professors
-                                                    </Badge>
-                                                </div>
-                                            </div>
-                                            <div className="relative w-full sm:w-64">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                <Input
-                                                    placeholder="Search professors..."
-                                                    value={professorsSearch}
-                                                    onChange={(e) => setProfessorsSearch(e.target.value)}
-                                                    className="pl-9 h-9"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                            {professorsForDepartment.filter(prof => {
-                                                if (!professorsSearch) return true
-                                                return prof.professorName.toLowerCase().includes(professorsSearch.toLowerCase())
-                                            }).map((prof, index) => {
-                                                const palette = [
-                                                    { bg: "bg-blue-50/50", border: "border-blue-200", icon: "bg-blue-100 text-blue-600", chevron: "text-blue-400" },
-                                                    { bg: "bg-green-50/50", border: "border-green-200", icon: "bg-green-100 text-green-600", chevron: "text-green-400" },
-                                                    { bg: "bg-purple-50/50", border: "border-purple-200", icon: "bg-purple-100 text-purple-600", chevron: "text-purple-400" },
-                                                    { bg: "bg-pink-50/50", border: "border-pink-200", icon: "bg-pink-100 text-pink-600", chevron: "text-pink-400" },
-                                                    { bg: "bg-amber-50/50", border: "border-amber-200", icon: "bg-amber-100 text-amber-600", chevron: "text-amber-400" },
-                                                    { bg: "bg-indigo-50/50", border: "border-indigo-200", icon: "bg-indigo-100 text-indigo-600", chevron: "text-indigo-400" },
-                                                ]
-                                                const color = palette[index % palette.length]
-                                                return (
-                                                    <Card 
-                                                        key={prof.professorId} 
-                                                        className={`group cursor-pointer transition-all duration-300 hover:shadow-md hover:scale-[1.01] border ${color.border} ${color.bg}`}
-                                                        onClick={() => handleProfessorClick(prof.professorId)}
-                                                    >
-                                                        <CardContent className="p-4 sm:p-5 flex items-center justify-between">
-                                                            <div className="flex items-center gap-4 flex-1 min-w-0">
-                                                                <div className={`w-12 h-12 rounded-full flex-shrink-0 ${color.icon} flex items-center justify-center transition-colors shadow-sm border-2 border-white`}>
-                                                                    <Users className="h-6 w-6" />
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors truncate text-sm leading-tight">
-                                                                        {prof.professorName}
-                                                                    </h4>
-                                                                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                                                        <span className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-white/60 px-2 py-0.5 rounded-lg border border-gray-100 shadow-sm whitespace-nowrap">
-                                                                            <BarChart3 className="h-3 w-3" />
-                                                                            {prof.evaluationCount} eval{prof.evaluationCount !== 1 ? 's' : ''}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <ChevronRight className={`h-5 w-5 flex-shrink-0 ${color.chevron} group-hover:translate-x-1 transition-transform`} />
-                                                        </CardContent>
-                                                    </Card>
-                                                )
-                                            })}
-                                        </div>
-                                    </>
-                                )}
-                            </>
-                        )}
-                        {viewLevel === "results" && selectedProfessorData && (
-                            <>
-                                <div className="flex flex-col gap-4 mb-6">
-                                    {/* Header with title, profile picture, and search */}
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                        <div className="flex items-center gap-3">
-                                            {/* Professor profile picture */}
-                                            {(() => {
-                                                const prof = professors.find(p => p.id === selectedProfessorId)
-                                                const imageUrl = prof?.imageUrl
-                                                return imageUrl ? (
-                                                    <img
-                                                        src={imageUrl}
-                                                        alt={selectedProfessorData.professorName}
-                                                        className="w-12 h-12 rounded-full object-cover border-2 border-purple-200 shadow-sm"
-                                                    />
-                                                ) : (
-                                                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center border-2 border-purple-200">
-                                                        <svg className="w-7 h-7 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                                                        </svg>
-                                                    </div>
-                                                )
-                                            })()}
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <BarChart3 className="h-5 w-5 text-purple-500" />
-                                                    <h3 className="font-semibold text-lg">Results for {selectedProfessorData.professorName}</h3>
-                                                </div>
-                                                <Badge variant="secondary" className="mt-1">
-                                                    {selectedProfessorData.evaluationCount} evaluation{selectedProfessorData.evaluationCount !== 1 ? 's' : ''}
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={handleExportPDF}
-                                            className="h-9 gap-2 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all shadow-sm"
-                                        >
-                                            <FileDown className="h-4 w-4" />
-                                            <span className="font-semibold">Export PDF</span>
-                                        </Button>
-                                    </div>
-
-                                    {/* Section filter tabs */}
-                                    <div className="flex flex-wrap gap-2 p-1 bg-muted/30 rounded-lg">
+                                </>
+                            )}
+                        </>
+                    )}
+                    {viewLevel === "results" && selectedProfessorData && (
+                        <>
+                            <div className="flex flex-col gap-4 mb-6">
+                                {/* Header with title, profile picture, and search */}
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex items-center gap-3">
+                                        {/* Professor profile picture */}
                                         {(() => {
-                                            // Deduplicate sections based on normalized name
-                                            const seenNormalized = new Set<string>()
-                                            return SECTION_ORDER.filter(section => {
-                                                const normalized = normalizeSectionName(section)
-                                                // Skip Comments - we'll add it manually
-                                                if (normalized === "comment" || normalized === "comments") return false
-                                                // Skip if we've already seen this normalized name
-                                                if (seenNormalized.has(normalized)) return false
-                                                // Check if this section has any questions
-                                                const hasQuestions = Object.values(questionAggregates).some(ag => sectionMatches(ag.section || "", section))
-                                                if (hasQuestions) {
-                                                    seenNormalized.add(normalized)
-                                                    return true
-                                                }
-                                                return false
-                                            }).map((section) => {
-                                                // Get short name for tab
-                                                const shortName = section.replace(/^[A-F]\.\s*/, "")
-                                                // Check if active using flexible matching
-                                                const isActive = selectedSection ? sectionMatches(selectedSection, section) : false
-                                                return (
-                                                    <Button
-                                                        key={section}
-                                                        variant={isActive ? "default" : "ghost"}
-                                                        size="sm"
-                                                        onClick={() => setSelectedSection(isActive ? null : section)}
-                                                        className={`text-xs h-8 ${isActive ? 'shadow-sm' : 'hover:bg-background/80'}`}
-                                                    >
-                                                        {shortName}
-                                                    </Button>
-                                                )
-                                            })
-                                        })()}
-                                        {/* Always show Comments button */}
-                                        <Button
-                                            variant={selectedSection === "Comments" ? "default" : "ghost"}
-                                            size="sm"
-                                            onClick={() => setSelectedSection(selectedSection === "Comments" ? null : "Comments")}
-                                            className={`text-xs h-8 ${selectedSection === "Comments" ? 'shadow-sm' : 'hover:bg-background/80'}`}
-                                        >
-                                            Comments
-                                        </Button>
-                                    </div>
-
-
-                                </div>
-
-
-                                {Object.keys(questionAggregates).length === 0 ? (
-                                    <div className="text-center py-8 bg-muted/30 rounded-lg border-2 border-dashed">
-                                        <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                                        <p className="text-foreground font-medium">No submitted evaluations found</p>
-                                        <p className="text-muted-foreground text-sm">Only submitted evaluations are displayed</p>
-                                    </div>
-                                ) : selectedSection === "Comments" ? (
-                                    /* Special handling for Comment - show student text answers */
-                                    <div className="space-y-6">
-                                        <div className="bg-teal-50 rounded-lg p-6 border-l-4 border-teal-500 shadow-sm">
-                                            <div className="flex items-center gap-3 mb-6">
-                                                <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
-                                                    <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                            const prof = professors.find(p => p.id === selectedProfessorId)
+                                            const imageUrl = prof?.imageUrl
+                                            return imageUrl ? (
+                                                <img
+                                                    src={imageUrl}
+                                                    alt={selectedProfessorData.professorName}
+                                                    className="w-12 h-12 rounded-full object-cover border-2 border-purple-200 shadow-sm"
+                                                />
+                                            ) : (
+                                                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center border-2 border-purple-200">
+                                                    <svg className="w-7 h-7 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                                                     </svg>
                                                 </div>
-                                                <div>
-                                                    <h4 className="font-bold text-xl text-teal-800">Comments</h4>
-                                                    <p className="text-teal-600 text-sm">Student feedback and comments</p>
-                                                </div>
+                                            )
+                                        })()}
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <BarChart3 className="h-5 w-5 text-purple-500" />
+                                                <h3 className="font-semibold text-lg">Results for {selectedProfessorData.professorName}</h3>
                                             </div>
-                                            <div className="space-y-4">
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <Badge variant="secondary">
+                                                    {selectedProfessorData.evaluationCount} evaluation{selectedProfessorData.evaluationCount !== 1 ? 's' : ''}
+                                                </Badge>
                                                 {(() => {
-                                                    // Search through all evaluations for comment text responses
-                                                    const evaluations = selectedProfessorData?.evaluations || []
-                                                    const commentResponses: { questionText: string; answer: string; questionId: string; studentName?: string }[] = []
+                                                    const aggs = Object.values(questionAggregates)
+                                                    if (aggs.length === 0) return null
 
-                                                    evaluations
-                                                        .filter((e: any) => e.evaluationStatus === "submitted")
-                                                        .forEach((evaluation: any) => {
-                                                            const studentName = evaluation.studentName || "Anonymous Student"
-                                                                ; (evaluation.responses || []).forEach((response: any) => {
-                                                                    // Check if this is a comment response
-                                                                    const sectionLower = (response.section || "").toLowerCase()
-                                                                    const questionTextLower = (response.questionText || "").toLowerCase()
-
-                                                                    // Match comments by:
-                                                                    // 1. Section name contains "comment"
-                                                                    // 2. Question type is "text"
-                                                                    // 3. Section starts with "F." (F. Comments)
-                                                                    const isCommentSection =
-                                                                        sectionLower === "comment" ||
-                                                                        sectionLower === "comments" ||
-                                                                        sectionLower === "f. comment" ||
-                                                                        sectionLower === "f. comments" ||
-                                                                        sectionLower.includes("comment")
-
-                                                                    if (isCommentSection && response.answer && String(response.answer).trim()) {
-                                                                        commentResponses.push({
-                                                                            questionText: response.questionText || "Comment",
-                                                                            answer: String(response.answer).trim(),
-                                                                            questionId: response.questionId,
-                                                                            studentName: studentName
-                                                                        })
-                                                                    }
-                                                                })
-                                                        })
-
-                                                    if (commentResponses.length === 0) {
-                                                        return (
-                                                            <div className="text-center py-8 bg-white rounded-xl border-2 border-dashed border-teal-200">
-                                                                <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                                                    <svg className="w-8 h-8 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                                                    </svg>
-                                                                </div>
-                                                                <p className="text-teal-700 font-semibold text-lg">No Comments Yet</p>
-                                                                <p className="text-teal-500 text-sm mt-1">Students have not submitted any comments yet.</p>
-                                                            </div>
-                                                        )
-                                                    }
-
-                                                    // Group responses by question
-                                                    const groupedByQuestion = new Map<string, { questionText: string; answers: { text: string; studentName: string }[] }>()
-                                                    commentResponses.forEach(r => {
-                                                        if (!groupedByQuestion.has(r.questionId)) {
-                                                            groupedByQuestion.set(r.questionId, { questionText: r.questionText, answers: [] })
-                                                        }
-                                                        groupedByQuestion.get(r.questionId)!.answers.push({
-                                                            text: r.answer,
-                                                            studentName: r.studentName || "Student"
-                                                        })
+                                                    const groupedBySection: Record<string, QuestionAggregate[]> = {}
+                                                    aggs.forEach(q => {
+                                                        const section = q.section || "Other"
+                                                        if (!groupedBySection[section]) groupedBySection[section] = []
+                                                        groupedBySection[section].push(q)
                                                     })
 
-                                                    return Array.from(groupedByQuestion.entries()).map(([qid, data], questionIndex) => (
-                                                        <Card key={qid} className="bg-white shadow-md hover:shadow-lg transition-shadow border-2 border-teal-100">
-                                                            <CardContent className="p-5">
-                                                                {/* Question Header */}
-                                                                <div className="flex items-start gap-3 mb-4 pb-3 border-b border-teal-100">
-                                                                    <Badge className="bg-teal-500 text-white px-3 py-1 text-xs font-bold">
-                                                                        Q{questionIndex + 1}
-                                                                    </Badge>
-                                                                    <p className="font-semibold text-gray-800 text-base leading-relaxed">{data.questionText}</p>
-                                                                </div>
+                                                    const weights: Record<string, number> = {
+                                                        "instructional competence": 0.4,
+                                                        "classroom management": 0.2,
+                                                        "professionalism & personal qualities": 0.2,
+                                                        "professionalism and personal qualities": 0.2,
+                                                        "personal & professional qualities": 0.2,
+                                                        "personal and professional qualities": 0.2,
+                                                        "personal qualities": 0.2,
+                                                        "student support & development": 0.1,
+                                                        "student support and development": 0.1,
+                                                        "student engagement & assessment": 0.1,
+                                                        "student engagement and assessment": 0.1,
+                                                        "research": 0.1,
+                                                        "e. research": 0.1
+                                                    }
 
-                                                                {/* Student Answers */}
-                                                                <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                                                                    <p className="text-xs text-teal-600 font-medium uppercase tracking-wide mb-2">
-                                                                        {data.answers.length} Student Response{data.answers.length !== 1 ? 's' : ''}
-                                                                    </p>
-                                                                    {data.answers.map((answerData, idx) => (
-                                                                        <div key={idx} className="bg-gradient-to-r from-teal-50 to-cyan-50 p-4 rounded-lg border border-teal-200 hover:border-teal-300 transition-colors">
-                                                                            <div className="flex items-center gap-2 mb-2">
-                                                                                <div className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                                                                                    {idx + 1}
-                                                                                </div>
-                                                                                <span className="text-teal-700 font-semibold text-sm">Response {idx + 1}</span>
-                                                                            </div>
-                                                                            <p className="text-gray-700 text-sm leading-relaxed pl-8">
-                                                                                "{answerData.text}"
-                                                                            </p>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </CardContent>
-                                                        </Card>
-                                                    ))
-                                               })()}
+                                                    let finalWeightedRating = 0
+
+                                                    Object.entries(groupedBySection).forEach(([sec, sqs]) => {
+                                                        const normalizedName = normalizeSectionName(sec)
+                                                        if (normalizedName === "comments") return
+
+                                                        const weight = weights[normalizedName] || 0
+                                                        if (weight === 0) return
+
+                                                        let secWeightedSum = 0
+                                                        let secTotalResponses = 0
+
+                                                        sqs.forEach(q => {
+                                                            if (q.questionType !== "text") {
+                                                                const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                                                                opts.forEach((opt, oi) => {
+                                                                    const val = q.counts[opt] || 0
+                                                                    let score = 0
+                                                                    const label = opt.toLowerCase()
+                                                                    if (label === "excellent" || oi === 0) score = 5
+                                                                    else if (label === "very satisfactory" || label === "verysatisfactory" || oi === 1) score = 4
+                                                                    else if (label === "satisfactory" || oi === 2) score = 3
+                                                                    else if (label === "fair" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                                                                    else if (label === "poor" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+
+                                                                    secWeightedSum += val * score
+                                                                    secTotalResponses += val
+                                                                })
+                                                            }
+                                                        })
+
+                                                        if (secTotalResponses > 0) {
+                                                            finalWeightedRating += (secWeightedSum / secTotalResponses) * weight
+                                                        }
+                                                    })
+
+                                                    const label = finalWeightedRating >= 4.5 ? "Excellent" : finalWeightedRating >= 3.5 ? "Very Satisfactory" : finalWeightedRating >= 2.5 ? "Satisfactory" : finalWeightedRating >= 1.5 ? "Fair" : "Poor"
+                                                    const color = finalWeightedRating >= 4.5 ? "text-green-600 bg-green-50 border-green-200" : finalWeightedRating >= 3.5 ? "text-blue-600 bg-blue-50 border-blue-200" : finalWeightedRating >= 2.5 ? "text-yellow-600 bg-yellow-50 border-yellow-200" : finalWeightedRating >= 1.5 ? "text-orange-600 bg-orange-50 border-orange-200" : "text-red-600 bg-red-50 border-red-200"
+
+                                                    return (
+                                                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-bold shadow-sm ${color}`}>
+                                                            <span>{finalWeightedRating.toFixed(2)}</span>
+                                                            <span className="opacity-70">|</span>
+                                                            <span>{label}</span>
+                                                        </div>
+                                                    )
+                                                })()}
                                             </div>
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="space-y-6">
-                                        {/* Group by section - filter by selectedSection, deduplicated */}
-                                        {(() => {
-                                            const seenNormalized = new Set<string>()
-                                            return SECTION_ORDER.filter(section => {
-                                                const normalized = normalizeSectionName(section)
-                                                // Skip Comments - handled separately
-                                                if (normalized === "comment" || normalized === "comments") return false
-                                                // Skip if we've already seen this normalized name
-                                                if (seenNormalized.has(normalized)) return false
-                                                // If a section is selected, only show sections that match (using flexible matching)
-                                                if (selectedSection && !sectionMatches(section, selectedSection)) return false
-                                                // Only show sections that have questions (using flexible matching)
-                                                const hasQuestions = Object.values(questionAggregates).some(ag => sectionMatches(ag.section || "", section))
-                                                if (hasQuestions) {
-                                                    seenNormalized.add(normalized)
-                                                    return true
-                                                }
-                                                return false
-                                            })
-                                        })().map((section) => {
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleExportPDF}
+                                        className="h-9 gap-2 text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all shadow-sm"
+                                    >
+                                        <FileDown className="h-4 w-4" />
+                                        <span className="font-semibold">Export PDF</span>
+                                    </Button>
+                                </div>
 
-                                            const sectionColors = SECTION_COLORS[section] || { bg: "bg-gray-50", border: "border-gray-500", text: "text-gray-700" }
-                                            // Filter questions by section (flexible matching) and search query
-                                            const sectionQuestions = Object.values(questionAggregates).filter(ag => {
-                                                if (!sectionMatches(ag.section || "", section)) return false
-                                                if (searchQuery) {
-                                                    return ag.questionText.toLowerCase().includes(searchQuery.toLowerCase())
-                                                }
+                                {/* Section filter tabs */}
+                                <div className="flex flex-wrap gap-2 p-1 bg-muted/30 rounded-lg">
+                                    {(() => {
+                                        // Deduplicate sections based on normalized name
+                                        const seenNormalized = new Set<string>()
+                                        return SECTION_ORDER.filter(section => {
+                                            const normalized = normalizeSectionName(section)
+                                            // Skip Comments - we'll add it manually
+                                            if (normalized === "comment" || normalized === "comments") return false
+                                            // Skip if we've already seen this normalized name
+                                            if (seenNormalized.has(normalized)) return false
+                                            // Check if this section has any questions
+                                            const hasQuestions = Object.values(questionAggregates).some(ag => sectionMatches(ag.section || "", section))
+                                            if (hasQuestions) {
+                                                seenNormalized.add(normalized)
                                                 return true
-                                            })
-
-
-                                            // Skip section if no questions match search
-                                            if (sectionQuestions.length === 0) return null
-
-
+                                            }
+                                            return false
+                                        }).map((section) => {
+                                            // Get short name for tab
+                                            const shortName = section.replace(/^[A-F]\.\s*/, "")
+                                            // Check if active using flexible matching
+                                            const isActive = selectedSection ? sectionMatches(selectedSection, section) : false
                                             return (
-                                                <div key={section} className={`${sectionColors.bg} rounded-lg p-4 border-l-4 ${sectionColors.border}`}>
-                                                    <h4 className={`font-semibold text-lg mb-4 ${sectionColors.text}`}>{section}</h4>
-                                                    <div className="space-y-4">
-                                                        {sectionQuestions.map((ag) => (
-                                                            <Card key={ag.questionId} className="bg-white">
-                                                                <CardContent className="p-4">
-                                                                    <p className="font-medium text-gray-800 mb-4">{ag.questionText}</p>
-                                                                    {ag.questionType === "text" ? (
-                                                                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                                                                            {ag.textResponses?.map((resp, idx) => (
-                                                                                <div key={idx} className="bg-gray-50 p-3 rounded border text-sm">
-                                                                                    {resp}
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                            <div
-                                                                                id={`history-pie-chart-${ag.questionId}`}
-                                                                                className="h-64 bg-gray-50 rounded-lg"
-                                                                            />
-                                                                            <div
-                                                                                id={`history-bar-chart-${ag.questionId}`}
-                                                                                className="h-64 bg-gray-50 rounded-lg"
-                                                                            />
-                                                                        </div>
-                                                                    )}
-                                                                </CardContent>
-                                                            </Card>
-                                                        ))}
-                                                    </div>
-                                                </div>
+                                                <Button
+                                                    key={section}
+                                                    variant={isActive ? "default" : "ghost"}
+                                                    size="sm"
+                                                    onClick={() => setSelectedSection(isActive ? null : section)}
+                                                    className={`text-xs h-8 ${isActive ? 'shadow-sm' : 'hover:bg-background/80'}`}
+                                                >
+                                                    {shortName}
+                                                </Button>
                                             )
                                         })
+                                    })()}
+                                    {/* Always show Comments button */}
+                                    <Button
+                                        variant={selectedSection === "Comments" ? "default" : "ghost"}
+                                        size="sm"
+                                        onClick={() => setSelectedSection(selectedSection === "Comments" ? null : "Comments")}
+                                        className={`text-xs h-8 ${selectedSection === "Comments" ? 'shadow-sm' : 'hover:bg-background/80'}`}
+                                    >
+                                        Comments
+                                    </Button>
+                                </div>
+
+
+                            </div>
+
+
+                            {Object.keys(questionAggregates).length === 0 ? (
+                                <div className="text-center py-8 bg-muted/30 rounded-lg border-2 border-dashed">
+                                    <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                                    <p className="text-foreground font-medium">No submitted evaluations found</p>
+                                    <p className="text-muted-foreground text-sm">Only submitted evaluations are displayed</p>
+                                </div>
+                            ) : selectedSection === "Comments" ? (
+                                /* Special handling for Comment - show student text answers */
+                                <div className="space-y-6">
+                                    <div className="bg-teal-50 rounded-lg p-6 border-l-4 border-teal-500 shadow-sm">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
+                                                <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-xl text-teal-800">Comments</h4>
+                                                <p className="text-teal-600 text-sm">Student feedback and comments</p>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-4">
+                                            {(() => {
+                                                // Search through all evaluations for comment text responses
+                                                const evaluations = selectedProfessorData?.evaluations || []
+                                                const commentResponses: { questionText: string; answer: string; questionId: string; studentName?: string }[] = []
+
+                                                evaluations
+                                                    .filter((e: any) => e.evaluationStatus === "submitted")
+                                                    .forEach((evaluation: any) => {
+                                                        const studentName = evaluation.studentName || "Anonymous Student"
+                                                            ; (evaluation.responses || []).forEach((response: any) => {
+                                                                // Check if this is a comment response
+                                                                const sectionLower = (response.section || "").toLowerCase()
+                                                                const questionTextLower = (response.questionText || "").toLowerCase()
+
+                                                                // Match comments by:
+                                                                // 1. Section name contains "comment"
+                                                                // 2. Question type is "text"
+                                                                // 3. Section starts with "F." (F. Comments)
+                                                                const isCommentSection =
+                                                                    sectionLower === "comment" ||
+                                                                    sectionLower === "comments" ||
+                                                                    sectionLower === "f. comment" ||
+                                                                    sectionLower === "f. comments" ||
+                                                                    sectionLower.includes("comment")
+
+                                                                if (isCommentSection && response.answer && String(response.answer).trim()) {
+                                                                    commentResponses.push({
+                                                                        questionText: response.questionText || "Comment",
+                                                                        answer: String(response.answer).trim(),
+                                                                        questionId: response.questionId,
+                                                                        studentName: studentName
+                                                                    })
+                                                                }
+                                                            })
+                                                    })
+
+                                                if (commentResponses.length === 0) {
+                                                    return (
+                                                        <div className="text-center py-8 bg-white rounded-xl border-2 border-dashed border-teal-200">
+                                                            <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                                                <svg className="w-8 h-8 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                                                </svg>
+                                                            </div>
+                                                            <p className="text-teal-700 font-semibold text-lg">No Comments Yet</p>
+                                                            <p className="text-teal-500 text-sm mt-1">Students have not submitted any comments yet.</p>
+                                                        </div>
+                                                    )
+                                                }
+
+                                                // Group responses by question
+                                                const groupedByQuestion = new Map<string, { questionText: string; answers: { text: string; studentName: string }[] }>()
+                                                commentResponses.forEach(r => {
+                                                    if (!groupedByQuestion.has(r.questionId)) {
+                                                        groupedByQuestion.set(r.questionId, { questionText: r.questionText, answers: [] })
+                                                    }
+                                                    groupedByQuestion.get(r.questionId)!.answers.push({
+                                                        text: r.answer,
+                                                        studentName: r.studentName || "Student"
+                                                    })
+                                                })
+
+                                                return Array.from(groupedByQuestion.entries()).map(([qid, data], questionIndex) => (
+                                                    <Card key={qid} className="bg-white shadow-md hover:shadow-lg transition-shadow border-2 border-teal-100">
+                                                        <CardContent className="p-5">
+                                                            {/* Question Header */}
+                                                            <div className="flex items-start gap-3 mb-4 pb-3 border-b border-teal-100">
+                                                                <Badge className="bg-teal-500 text-white px-3 py-1 text-xs font-bold">
+                                                                    Q{questionIndex + 1}
+                                                                </Badge>
+                                                                <p className="font-semibold text-gray-800 text-base leading-relaxed">{data.questionText}</p>
+                                                            </div>
+
+                                                            {/* Student Answers */}
+                                                            <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                                                                <p className="text-xs text-teal-600 font-medium uppercase tracking-wide mb-2">
+                                                                    {data.answers.length} Student Response{data.answers.length !== 1 ? 's' : ''}
+                                                                </p>
+                                                                {data.answers.map((answerData, idx) => (
+                                                                    <div key={idx} className="bg-gradient-to-r from-teal-50 to-cyan-50 p-4 rounded-lg border border-teal-200 hover:border-teal-300 transition-colors">
+                                                                        <div className="flex items-center gap-2 mb-2">
+                                                                            <div className="w-6 h-6 bg-teal-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                                                                                {idx + 1}
+                                                                            </div>
+                                                                            <span className="text-teal-700 font-semibold text-sm">Response {idx + 1}</span>
+                                                                        </div>
+                                                                        <p className="text-gray-700 text-sm leading-relaxed pl-8">
+                                                                            "{answerData.text}"
+                                                                        </p>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </CardContent>
+                                                    </Card>
+                                                ))
+                                            })()}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-6">
+                                    {/* Group by section - filter by selectedSection, deduplicated */}
+                                    {(() => {
+                                        const seenNormalized = new Set<string>()
+                                        return SECTION_ORDER.filter(section => {
+                                            const normalized = normalizeSectionName(section)
+                                            // Skip Comments - handled separately
+                                            if (normalized === "comment" || normalized === "comments") return false
+                                            // Skip if we've already seen this normalized name
+                                            if (seenNormalized.has(normalized)) return false
+                                            // If a section is selected, only show sections that match (using flexible matching)
+                                            if (selectedSection && !sectionMatches(section, selectedSection)) return false
+                                            // Only show sections that have questions (using flexible matching)
+                                            const hasQuestions = Object.values(questionAggregates).some(ag => sectionMatches(ag.section || "", section))
+                                            if (hasQuestions) {
+                                                seenNormalized.add(normalized)
+                                                return true
+                                            }
+                                            return false
+                                        })
+                                    })().map((section) => {
+
+                                        const sectionColors = SECTION_COLORS[section] || { bg: "bg-gray-50", border: "border-gray-500", text: "text-gray-700" }
+                                        // Filter questions by section (flexible matching) and search query
+                                        const sectionQuestions = Object.values(questionAggregates).filter(ag => {
+                                            if (!sectionMatches(ag.section || "", section)) return false
+                                            if (searchQuery) {
+                                                return ag.questionText.toLowerCase().includes(searchQuery.toLowerCase())
+                                            }
+                                            return true
+                                        })
+
+
+                                        // Skip section if no questions match search
+                                        if (sectionQuestions.length === 0) return null
+
+
+                                        return (
+                                            <div key={section} className={`${sectionColors.bg} rounded-lg p-4 border-l-4 ${sectionColors.border}`}>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h4 className={`font-bold text-lg ${sectionColors.text}`}>{section}</h4>
+                                                    {(() => {
+                                                        let secWeightedSum = 0
+                                                        let secTotalResponses = 0
+
+                                                        sectionQuestions.forEach(q => {
+                                                            if (q.questionType !== "text") {
+                                                                const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                                                                opts.forEach((opt, oi) => {
+                                                                    const val = q.counts[opt] || 0
+                                                                    let score = 0
+                                                                    const label = opt.toLowerCase()
+                                                                    if (label === "excellent" || oi === 0) score = 5
+                                                                    else if (label === "very satisfactory" || label === "verysatisfactory" || oi === 1) score = 4
+                                                                    else if (label === "satisfactory" || oi === 2) score = 3
+                                                                    else if (label === "fair" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                                                                    else if (label === "poor" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+
+                                                                    secWeightedSum += val * score
+                                                                    secTotalResponses += val
+                                                                })
+                                                            }
+                                                        })
+
+                                                        const secAvg = secTotalResponses > 0 ? secWeightedSum / secTotalResponses : 0
+                                                        return secAvg > 0 ? (
+                                                            <div className={`px-2.5 py-1 rounded-lg border bg-white/50 shadow-sm text-sm font-bold flex items-center gap-2 ${sectionColors.text} ${sectionColors.border}`}>
+                                                                <span className="text-[10px] uppercase opacity-70">Average</span>
+                                                                <span>{secAvg.toFixed(2)}</span>
+                                                            </div>
+                                                        ) : null
+                                                    })()}
+                                                </div>
+                                                <div className="space-y-4">
+                                                    {sectionQuestions.map((ag) => (
+                                                        <Card key={ag.questionId} className="bg-white">
+                                                            <CardContent className="p-4">
+                                                                <p className="font-medium text-gray-800 mb-4">{ag.questionText}</p>
+                                                                {ag.questionType === "text" ? (
+                                                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                                        {ag.textResponses?.map((resp, idx) => (
+                                                                            <div key={idx} className="bg-gray-50 p-3 rounded border text-sm">
+                                                                                {resp}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                        <div
+                                                                            id={`history-pie-chart-${ag.questionId}`}
+                                                                            className="h-64 bg-gray-50 rounded-lg"
+                                                                        />
+                                                                        <div
+                                                                            id={`history-bar-chart-${ag.questionId}`}
+                                                                            className="h-64 bg-gray-50 rounded-lg"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </CardContent>
+                                                        </Card>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )
+                                    })
                                     }
                                 </div>
                             )}

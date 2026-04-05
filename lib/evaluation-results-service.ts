@@ -8,8 +8,8 @@ export interface TopProfessorData {
   professorId: string
   professorName: string
   departmentName: string
-  stronglyAgreeCount: number
-  agreeCount: number
+  excellentCount: number
+  verySatisfactoryCount: number
   positiveResponses: number
   totalResponses: number
   averageRating: number
@@ -464,7 +464,7 @@ export const evaluationResultsService = {
     return distribution
   },
 
-  // Calculate top performing professors based on Strongly Agree and Agree responses from evaluation results
+  // Calculate top performing professors based on Excellent and Very Satisfactory responses from evaluation results
   calculateTopPerformingProfessors(results: EvaluationResult[], limit: number = 5) {
     // Group results by professor
     const professorMap = new Map<
@@ -473,13 +473,14 @@ export const evaluationResultsService = {
         professorId: string
         professorName: string
         departmentName: string
-        stronglyAgreeCount: number
-        agreeCount: number
-        neutralCount: number
-        disagreeCount: number
-        stronglyDisagreeCount: number
+        excellentCount: number
+        verySatisfactoryCount: number
+        satisfactoryCount: number
+        fairCount: number
+        poorCount: number
         totalResponses: number
         totalEvaluations: number
+        sectionAverages: Record<string, { weightedSum: number; count: number }>
       }
     >()
 
@@ -498,20 +499,21 @@ export const evaluationResultsService = {
             professorId: result.professorId,
             professorName: result.professorName,
             departmentName: result.departmentName,
-            stronglyAgreeCount: 0,
-            agreeCount: 0,
-            neutralCount: 0,
-            disagreeCount: 0,
-            stronglyDisagreeCount: 0,
+            excellentCount: 0,
+            verySatisfactoryCount: 0,
+            satisfactoryCount: 0,
+            fairCount: 0,
+            poorCount: 0,
             totalResponses: 0,
             totalEvaluations: 0,
+            sectionAverages: {},
           })
         }
 
         const profData = professorMap.get(professorKey)!
         profData.totalEvaluations++
 
-        // Count Strongly Agree and Agree responses from Likert Scale questions
+        // Count Excellent and Very Satisfactory responses from Likert Scale questions
         result.responses?.forEach((response) => {
           if (response.questionType === "Likert Scale" && response.answer) {
             profData.totalResponses++
@@ -530,57 +532,106 @@ export const evaluationResultsService = {
               answerText = answerValue
             }
 
+            // Track section averages for weighted ranking
+            const section = response.section || "Other"
+            if (!profData.sectionAverages[section]) {
+              profData.sectionAverages[section] = { weightedSum: 0, count: 0 }
+            }
+
             // Count based on answer text (case-insensitive)
             const normalizedAnswer = answerText.toLowerCase()
-            if (normalizedAnswer === "strongly agree") {
-              profData.stronglyAgreeCount++
-            } else if (normalizedAnswer === "agree") {
-              profData.agreeCount++
-            } else if (normalizedAnswer === "neutral" || normalizedAnswer === "neither agree nor disagree") {
-              profData.neutralCount++
-            } else if (normalizedAnswer === "disagree") {
-              profData.disagreeCount++
-            } else if (normalizedAnswer === "strongly disagree") {
-              profData.stronglyDisagreeCount++
+            let score = 0
+
+            if (normalizedAnswer === "excellent" || normalizedAnswer === "5") {
+              profData.excellentCount++
+              score = 5
+            } else if (normalizedAnswer === "very satisfactory" || normalizedAnswer === "verysatisfactory" || normalizedAnswer === "4") {
+              profData.verySatisfactoryCount++
+              score = 4
+            } else if (normalizedAnswer === "satisfactory" || normalizedAnswer === "3") {
+              profData.satisfactoryCount++
+              score = 3
+            } else if (normalizedAnswer === "fair" || normalizedAnswer === "2") {
+              profData.fairCount++
+              score = 2
+            } else if (normalizedAnswer === "poor" || normalizedAnswer === "1") {
+              profData.poorCount++
+              score = 1
+            }
+
+            if (score > 0) {
+              profData.sectionAverages[section].weightedSum += score
+              profData.sectionAverages[section].count++
             }
           }
         })
       }
     })
 
-    // Calculate performance scores based on positive responses
+    // Calculate performance scores based on the new weighted section-based rating
     const topProfessors = Array.from(professorMap.values())
       .map((prof) => {
-        // Calculate positive response count (Strongly Agree + Agree)
-        const positiveResponses = prof.stronglyAgreeCount + prof.agreeCount
+        // Calculate the Final Rating based on weighted section averages
+        // Formula: Σ (Average per Area × Weight per Area)
+        const weights: Record<string, number> = {
+          "Instructional Competence": 0.4,
+          "Classroom Management": 0.2,
+          "Professionalism and Personal Qualities": 0.2,
+          "Personal and Professional Qualities": 0.2,
+          "Professionalism & Personal Qualities": 0.2,
+          "Personal & Professional Qualities": 0.2,
+          "Student Support and Development": 0.1,
+          "Student Engagement and Assessment": 0.1,
+          "Student Engagement & Assessment": 0.1,
+          "Student Support & Development": 0.1,
+          "Research": 0.1,
+          "E. Research": 0.1
+        }
 
-        // Calculate performance score as percentage of positive responses
-        const performanceScore = prof.totalResponses > 0
+        let totalWeightedRating = 0
+        let totalResponsesInWeightedSections = 0
+
+        Object.entries(prof.sectionAverages).forEach(([sec, data]) => {
+          const cleanName = this.normalizeCategoryName(sec)
+          const weight = weights[cleanName] || 0
+          if (weight > 0 && data.count > 0) {
+            const avg = data.weightedSum / data.count
+            totalWeightedRating += avg * weight
+            totalResponsesInWeightedSections += data.count
+          }
+        })
+
+        // Use the weighted rating if we have section data, otherwise fallback to global average
+        // But for consistency with the new formula, we primarily use the weighted one.
+        let finalRating = totalWeightedRating
+        
+        // If no sections matched but we have total responses, use a simple average
+        if (totalWeightedRating === 0 && prof.totalResponses > 0) {
+          const totalWeightedScore =
+            prof.excellentCount * 5 +
+            prof.verySatisfactoryCount * 4 +
+            prof.satisfactoryCount * 3 +
+            prof.fairCount * 2 +
+            prof.poorCount * 1
+          finalRating = totalWeightedScore / prof.totalResponses
+        }
+
+        // Performance score (percentage) for legacy compatibility or secondary sorting
+        const positiveResponses = prof.excellentCount + prof.verySatisfactoryCount
+        const performancePercentage = prof.totalResponses > 0
           ? Math.round((positiveResponses / prof.totalResponses) * 100)
-          : 0
-
-        // Calculate average rating (weighted: SA=5, A=4, N=3, D=2, SD=1)
-        const totalWeightedScore =
-          (prof.stronglyAgreeCount * 5) +
-          (prof.agreeCount * 4) +
-          (prof.neutralCount * 3) +
-          (prof.disagreeCount * 2) +
-          (prof.stronglyDisagreeCount * 1)
-
-        const averageRating = prof.totalResponses > 0
-          ? Math.round((totalWeightedScore / prof.totalResponses) * 100) / 100
           : 0
 
         return {
           professorId: prof.professorId,
           professorName: prof.professorName,
           departmentName: prof.departmentName,
-          stronglyAgreeCount: prof.stronglyAgreeCount,
-          agreeCount: prof.agreeCount,
+          excellentCount: prof.excellentCount,
+          verySatisfactoryCount: prof.verySatisfactoryCount,
           positiveResponses: positiveResponses,
           totalResponses: prof.totalResponses,
-          averageRating: averageRating,
-          performanceScore: performanceScore,
+          averageRating: Math.round(finalRating * 100) / 100,
+          performanceScore: performancePercentage,
           totalEvaluations: prof.totalEvaluations,
         }
       })
@@ -588,18 +639,14 @@ export const evaluationResultsService = {
         // Only include professors with at least 1 evaluation and some responses
         return prof.totalEvaluations > 0 && prof.totalResponses > 0
       })
-      .filter((prof) => {
-        // Only include professors with at least 1 positive response (exclude 0% scores)
-        return prof.performanceScore > 0 && prof.positiveResponses > 0
-      })
       .sort((a, b) => {
-        // Sort by performance score (descending), then by total positive responses (descending)
-        if (b.performanceScore !== a.performanceScore) {
-          return b.performanceScore - a.performanceScore
+        // Sort by weighted rating (descending), then by percentage
+        if (b.averageRating !== a.averageRating) {
+          return b.averageRating - a.averageRating
         }
-        return b.positiveResponses - a.positiveResponses
+        return b.performanceScore - a.performanceScore
       })
-      .slice(0, limit) // Get exactly top 5 (or less if fewer than 5 have data)
+      .slice(0, limit)
 
     return topProfessors
   },
@@ -612,20 +659,20 @@ export const evaluationResultsService = {
     const lower = normalized.toLowerCase()
 
     // Map various section name formats to standard category names
-    if (lower.includes("instructional") && lower.includes("competence")) {
+    if ((lower.includes("instructional") && lower.includes("competence")) || lower.startsWith("a.")) {
       return "Instructional Competence"
     }
-    if (lower.includes("classroom") && lower.includes("management")) {
+    if ((lower.includes("classroom") && lower.includes("management")) || lower.startsWith("b.")) {
       return "Classroom Management"
     }
-    if (lower.includes("research")) {
-      return "Research"
+    if ((lower.includes("personal") && lower.includes("professional") && lower.includes("qualities")) || lower.startsWith("c.") || lower.includes("professionalism")) {
+      return "Professionalism & Personal Qualities"
     }
-    if (lower.includes("student") && (lower.includes("support") || lower.includes("development"))) {
+    if ((lower.includes("student") && lower.includes("engagement") && lower.includes("assessment")) || lower.startsWith("d.") || lower.includes("support")) {
       return "Student Support & Development"
     }
-    if (lower.includes("professionalism") || (lower.includes("personal") && lower.includes("qualities"))) {
-      return "Professionalism & Personal Qualities"
+    if (lower.includes("research") || lower.startsWith("e.")) {
+      return "Research"
     }
 
     return normalized
@@ -655,13 +702,13 @@ export const evaluationResultsService = {
       }
     })
 
-    // Define the 5 main categories
+    // Define the 5 main categories (matching UI keys)
     const categories = [
       "Instructional Competence",
       "Classroom Management",
-      "Research",
-      "Student Support & Development",
       "Professionalism & Personal Qualities",
+      "Student Support & Development",
+      "Research",
     ]
 
     // Initialize category maps
@@ -673,11 +720,11 @@ export const evaluationResultsService = {
           professorId: string
           professorName: string
           departmentName: string
-          stronglyAgreeCount: number
-          agreeCount: number
-          neutralCount: number
-          disagreeCount: number
-          stronglyDisagreeCount: number
+          excellentCount: number
+          verySatisfactoryCount: number
+          satisfactoryCount: number
+          fairCount: number
+          poorCount: number
           totalResponses: number
           evaluationIds: Set<string> // Track unique evaluation IDs per category
         }
@@ -723,11 +770,11 @@ export const evaluationResultsService = {
                 professorId: result.professorId,
                 professorName: result.professorName,
                 departmentName: result.departmentName,
-                stronglyAgreeCount: 0,
-                agreeCount: 0,
-                neutralCount: 0,
-                disagreeCount: 0,
-                stronglyDisagreeCount: 0,
+                excellentCount: 0,
+                verySatisfactoryCount: 0,
+                satisfactoryCount: 0,
+                fairCount: 0,
+                poorCount: 0,
                 totalResponses: 0,
                 evaluationIds: new Set(),
               })
@@ -752,16 +799,16 @@ export const evaluationResultsService = {
 
             // Count based on answer text (case-insensitive)
             const normalizedAnswer = answerText.toLowerCase()
-            if (normalizedAnswer === "strongly agree") {
-              profData.stronglyAgreeCount++
-            } else if (normalizedAnswer === "agree") {
-              profData.agreeCount++
-            } else if (normalizedAnswer === "neutral" || normalizedAnswer === "neither agree nor disagree") {
-              profData.neutralCount++
-            } else if (normalizedAnswer === "disagree") {
-              profData.disagreeCount++
-            } else if (normalizedAnswer === "strongly disagree") {
-              profData.stronglyDisagreeCount++
+            if (normalizedAnswer === "excellent" || normalizedAnswer === "5") {
+              profData.excellentCount++
+            } else if (normalizedAnswer === "very satisfactory" || normalizedAnswer === "verysatisfactory" || normalizedAnswer === "4") {
+              profData.verySatisfactoryCount++
+            } else if (normalizedAnswer === "satisfactory" || normalizedAnswer === "3") {
+              profData.satisfactoryCount++
+            } else if (normalizedAnswer === "fair" || normalizedAnswer === "2") {
+              profData.fairCount++
+            } else if (normalizedAnswer === "poor" || normalizedAnswer === "1") {
+              profData.poorCount++
             }
           }
         })
@@ -784,16 +831,16 @@ export const evaluationResultsService = {
       const categoryMap = categoryMaps.get(category)!
       const topProfessors = Array.from(categoryMap.values())
         .map((prof) => {
-          const positiveResponses = prof.stronglyAgreeCount + prof.agreeCount
+          const positiveResponses = prof.excellentCount + prof.verySatisfactoryCount
           const performanceScore = prof.totalResponses > 0
             ? Math.round((positiveResponses / prof.totalResponses) * 100)
             : 0
           const totalWeightedScore =
-            prof.stronglyAgreeCount * 5 +
-            prof.agreeCount * 4 +
-            prof.neutralCount * 3 +
-            prof.disagreeCount * 2 +
-            prof.stronglyDisagreeCount * 1
+            prof.excellentCount * 5 +
+            prof.verySatisfactoryCount * 4 +
+            prof.satisfactoryCount * 3 +
+            prof.fairCount * 2 +
+            prof.poorCount * 1
           const averageRating = prof.totalResponses > 0
             ? Math.round((totalWeightedScore / prof.totalResponses) * 100) / 100
             : 0
@@ -802,8 +849,8 @@ export const evaluationResultsService = {
             professorId: prof.professorId,
             professorName: prof.professorName,
             departmentName: prof.departmentName,
-            stronglyAgreeCount: prof.stronglyAgreeCount,
-            agreeCount: prof.agreeCount,
+            excellentCount: prof.excellentCount,
+            verySatisfactoryCount: prof.verySatisfactoryCount,
             positiveResponses: positiveResponses,
             totalResponses: prof.totalResponses,
             averageRating: averageRating,
@@ -813,10 +860,10 @@ export const evaluationResultsService = {
         })
         .filter((prof) => prof.totalResponses > 0)
         .sort((a, b) => {
-          if (b.performanceScore !== a.performanceScore) {
-            return b.performanceScore - a.performanceScore
+          if (b.averageRating !== a.averageRating) {
+            return b.averageRating - a.averageRating
           }
-          return b.positiveResponses - a.positiveResponses
+          return b.performanceScore - a.performanceScore
         })
         .slice(0, limit)
 

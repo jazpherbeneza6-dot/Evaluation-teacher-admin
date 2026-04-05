@@ -120,6 +120,7 @@ export type EvaluationSectionWeights = {
   ResearchWeight: string
 }
 
+
 // STEP 6.3: Updated parsed question type for Excel parsing
 export type ParsedQuestion = {
   questionText: string

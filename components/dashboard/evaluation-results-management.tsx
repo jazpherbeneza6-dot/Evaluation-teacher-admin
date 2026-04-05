@@ -60,10 +60,10 @@ const SECTION_ORDER = [
   "Instructional Competence",
   "B. Classroom Management",
   "Classroom Management",
-  "C. Professionalism and Personal Qualities",
-  "Professionalism and Personal Qualities",
-  "D. Student Support and Development",
-  "Student Support and Development",
+  "C. Professionalism & Personal Qualities",
+  "Professionalism & Personal Qualities",
+  "D. Student Support & Development",
+  "Student Support & Development",
   "E. Research",
   "Research",
   "F. Comments",
@@ -76,15 +76,14 @@ const SECTION_COLORS: Record<string, { bg: string; border: string; text: string 
   "Instructional Competence": { bg: "bg-blue-50", border: "border-blue-500", text: "text-blue-700" },
   "B. Classroom Management": { bg: "bg-green-50", border: "border-green-500", text: "text-green-700" },
   "Classroom Management": { bg: "bg-green-50", border: "border-green-500", text: "text-green-700" },
-  "C. Professionalism and Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
-  "Professionalism and Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
-  "D. Student Support and Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
-  "Student Support and Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
+  "C. Professionalism & Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
+  "Professionalism & Personal Qualities": { bg: "bg-purple-50", border: "border-purple-500", text: "text-purple-700" },
+  "D. Student Support & Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
+  "Student Support & Development": { bg: "bg-orange-50", border: "border-orange-500", text: "text-orange-700" },
   "E. Research": { bg: "bg-pink-50", border: "border-pink-500", text: "text-pink-700" },
   "Research": { bg: "bg-pink-50", border: "border-pink-500", text: "text-pink-700" },
   "F. Comments": { bg: "bg-teal-50", border: "border-teal-500", text: "text-teal-700" },
   "Comments": { bg: "bg-teal-50", border: "border-teal-500", text: "text-teal-700" },
-
 }
 
 interface EvaluationResultsManagementProps {
@@ -435,7 +434,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
             if (!aggregates[qid]) {
               let baseOptions = Array.isArray(response.options) ? response.options : []
               if ((!baseOptions || baseOptions.length === 0) && resolvedQuestionType === "likert scale") {
-                baseOptions = ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"]
+                baseOptions = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
               }
               const initialCounts: Record<string, number> = {}
               baseOptions.forEach((opt) => {
@@ -634,7 +633,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                           gradient: "from-orange-500/10 via-orange-400/5 to-transparent",
                           border: "border-orange-500/30",
                           hoverBorder: "hover:border-orange-500",
-                          badge: "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20",
+                          badge: "bg-orange-500/10 text-orange-700 dark:orange-400 border-orange-500/20",
                           iconBg: "bg-orange-500/10",
                           textHover: "group-hover:text-orange-700 dark:group-hover:text-orange-400"
                         },
@@ -880,28 +879,78 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                 {/* Overall Performance in header */}
                 {Object.values(questionAggregates).length > 0 && (() => {
                   const aggs = Object.values(questionAggregates)
-                  let gp = 0, gt = 0
+
+                  // Group by section for weighted average
+                  const groupedBySection: Record<string, QuestionAggregate[]> = {}
                   aggs.forEach(q => {
-                    if (q.questionType !== "text" && !(q.section || "").toLowerCase().includes("comment")) {
-                      const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
-                      const opts = q.options || Object.keys(q.counts)
-                      gp += (q.counts[opts[0]] || 0) + (q.counts[opts[1]] || 0)
-                      gt += total
-                    }
+                    const section = q.section || "Other"
+                    if (!groupedBySection[section]) groupedBySection[section] = []
+                    groupedBySection[section].push(q)
                   })
-                  const pct = gt > 0 ? Math.round((gp / gt) * 100) : 0
-                  const label = pct >= 90 ? "Excellent" : pct >= 80 ? "Very Good" : pct >= 70 ? "Good" : pct >= 60 ? "Satisfactory" : "Needs Improvement"
-                  const color = pct >= 90 ? "text-green-400" : pct >= 80 ? "text-blue-400" : pct >= 70 ? "text-yellow-400" : pct >= 60 ? "text-orange-400" : "text-red-400"
+
+                  const weights: Record<string, number> = {
+                    "Instructional Competence": 0.4,
+                    "Classroom Management": 0.2,
+                    "Professionalism and Personal Qualities": 0.2,
+                    "Personal and Professional Qualities": 0.2,
+                    "Professionalism & Personal Qualities": 0.2,
+                    "Personal & Professional Qualities": 0.2,
+                    "Student Support and Development": 0.1,
+                    "Student Engagement and Assessment": 0.1,
+                    "Student Engagement & Assessment": 0.1,
+                    "Student Support & Development": 0.1,
+                    "Research": 0.1,
+                    "E. Research": 0.1
+                  }
+
+                  let finalWeightedRating = 0
+
+                  Object.entries(groupedBySection).forEach(([sec, sqs]) => {
+                    if (sec.toLowerCase().includes("comment")) return
+                    const cleanName = sec.replace(/^[A-F]\.\s*/, "").trim()
+                    const weight = weights[cleanName] || 0
+                    if (weight === 0) return
+
+                    let secWeightedSum = 0
+                    let secTotalResponses = 0
+
+                    sqs.forEach(q => {
+                      if (q.questionType !== "text") {
+                        const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                        opts.forEach((opt, oi) => {
+                          const val = q.counts[opt] || 0
+                          let score = 0
+                          const label = opt.toLowerCase()
+                          if (label === "excellent" || label === "excellent" || oi === 0) score = 5
+                          else if (label === "very satisfactory" || label === "verysatisfactory" || oi === 1) score = 4
+                          else if (label === "satisfactory" || oi === 2) score = 3
+                          else if (label === "fair" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                          else if (label === "poor" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+
+                          secWeightedSum += val * score
+                          secTotalResponses += val
+                        })
+                      }
+                    })
+
+                    const secAvg = secTotalResponses > 0 ? secWeightedSum / secTotalResponses : 0
+                    finalWeightedRating += secAvg * weight
+                  })
+
+                  const label = finalWeightedRating >= 4.5 ? "Excellent" : finalWeightedRating >= 3.5 ? "Very Satisfactory" : finalWeightedRating >= 2.5 ? "Satisfactory" : finalWeightedRating >= 1.5 ? "Fair" : "Poor"
+                  const color = finalWeightedRating >= 4.5 ? "text-green-400" : finalWeightedRating >= 3.5 ? "text-blue-400" : finalWeightedRating >= 2.5 ? "text-yellow-400" : finalWeightedRating >= 1.5 ? "text-orange-400" : "text-red-400"
+
                   return (
                     <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5 border border-white/20 flex-shrink-0">
-                      <div className={`text-xl sm:text-2xl font-bold ${color}`}>{pct}%</div>
+                      <div className={`text-xl sm:text-2xl font-bold ${color}`}>{finalWeightedRating.toFixed(2)}</div>
                       <div className="hidden sm:block">
                         <div className={`text-[10px] font-medium ${color}`}>{label}</div>
-                        <div className="text-[9px] text-gray-400">Overall</div>
+                        <div className="text-[9px] text-gray-400">Rating</div>
                       </div>
                     </div>
                   )
                 })()}
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -928,27 +977,30 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                     }
 
                     // Title
-                    doc.setFontSize(16)
+                    doc.setFontSize(18)
                     doc.setFont("helvetica", "bold")
-                    doc.text("Professor Evaluation Results", 14, 18)
-                    doc.setFontSize(11)
-                    doc.setFont("helvetica", "normal")
-                    const deptText = professor?.departmentName ? ` - ${professor.departmentName}` : ""
-                    doc.text(`${profName}${deptText}`, 14, 26)
+                    doc.setTextColor(30, 41, 59)
+                    doc.text("Professor Evaluation Results", 20, 22)
 
-                    // Evaluation Period on the right
+                    // Evaluation Period on the right (aligned with professor name)
                     if (activeDeadline) {
                       const startDate = new Date(activeDeadline.startDate)
                       const endDate = new Date(activeDeadline.endDate)
                       const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
                       const periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}`
-                      
+
                       doc.setFontSize(10)
-                      doc.setTextColor(100, 100, 100)
+                      doc.setFont("helvetica", "normal")
+                      doc.setTextColor(110, 120, 135)
                       const textWidth = doc.getTextWidth(periodText)
-                      doc.text(periodText, pageWidth - textWidth - 14, 26)
-                      doc.setTextColor(30, 30, 30) // Reset color
+                      doc.text(periodText, pageWidth - textWidth - 20, 30)
                     }
+
+                    doc.setFontSize(12)
+                    doc.setFont("helvetica", "bold")
+                    doc.setTextColor(100, 110, 130)
+                    const profDisplay = profName.toUpperCase() + (professor?.departmentName ? ` | ${professor.departmentName.toUpperCase()}` : "")
+                    doc.text(profDisplay, 20, 30)
 
                     // Group aggregates by section
                     const grouped: Record<string, QuestionAggregate[]> = {}
@@ -969,81 +1021,161 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                     })
 
                     // --- Overall Performance Summary Table ---
-                    let y = 36
-                    doc.setFontSize(12)
+                    let y = 40
+                    doc.setFontSize(13)
                     doc.setFont("helvetica", "bold")
-                    doc.text("Overall Performance Summary", 14, y)
-                    y += 8
+                    doc.setTextColor(30, 41, 59)
+                    doc.text("Overall Performance Summary", 20, y)
+                    y += 10
 
                     // Table header
-                    doc.setFillColor(55, 65, 81)
-                    doc.rect(14, y - 5, pageWidth - 28, 8, "F")
-                    doc.setFontSize(9)
+                    doc.setFillColor(51, 65, 85) // Dark slate
+                    doc.rect(14, y - 6, pageWidth - 28, 10, "F")
+                    doc.setFontSize(11)
                     doc.setTextColor(255, 255, 255)
-                    doc.text("Section", 16, y)
-                    doc.text("Score", pageWidth - 28, y)
-                    y += 6
+                    doc.text("Section Name", 18, y)
+                    doc.text("Avg. Score", pageWidth - 18, y, { align: "right" })
+                    y += 8
 
                     doc.setTextColor(30, 30, 30)
                     doc.setFont("helvetica", "normal")
-                    let grandPositive = 0
-                    let grandTotal = 0
+
+                    // Weights map
+                    const weights: Record<string, number> = {
+                      "Instructional Competence": 0.4,
+                      "Classroom Management": 0.2,
+                      "Professionalism and Personal Qualities": 0.2,
+                      "Personal and Professional Qualities": 0.2,
+                      "Professionalism & Personal Qualities": 0.2,
+                      "Personal & Professional Qualities": 0.2,
+                      "Student Support and Development": 0.1,
+                      "Student Engagement and Assessment": 0.1,
+                      "Student Engagement & Assessment": 0.1,
+                      "Student Support & Development": 0.1,
+                      "Research": 0.1,
+                      "E. Research": 0.1
+                    }
+
+                    let finalWeightedRating = 0
+                    let totalDefinedWeights = 0
 
                     sortedSecs.forEach((sec, idx) => {
                       const secQuestions = grouped[sec]
                       // Skip Comments
                       if (sec.toLowerCase().includes("comment")) return
 
-                      let secPositive = 0
-                      let secTotal = 0
+                      const cleanName = sec.replace(/^[A-F]\.\s*/, "").trim()
+                      const weight = weights[cleanName] || 0
+
+                      let secWeightedSum = 0
+                      let secTotalResponses = 0
+
                       secQuestions.forEach(q => {
                         if (q.questionType !== "text") {
-                          const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
-                          const opts = q.options || Object.keys(q.counts)
-                          secPositive += (q.counts[opts[0]] || 0) + (q.counts[opts[1]] || 0)
-                          secTotal += total
+                          const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+
+                          let weightedScore = 0
+                          let count = 0
+
+                          opts.forEach((opt, oi) => {
+                            const val = q.counts[opt] || 0
+                            let score = 0
+                            const label = opt.toLowerCase()
+                            if (label === "excellent" || oi === 0) score = 5
+                            else if (label === "very satisfactory" || oi === 1) score = 4
+                            else if (label === "satisfactory" || oi === 2) score = 3
+                            else if (label === "fair" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                            else if (label === "poor" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+
+                            weightedScore += val * score
+                            count += val
+                          })
+
+                          secWeightedSum += weightedScore
+                          secTotalResponses += count
                         }
                       })
-                      grandPositive += secPositive
-                      grandTotal += secTotal
-                      const pct = secTotal > 0 ? Math.round((secPositive / secTotal) * 100) : 0
+
+                      const secAvg = secTotalResponses > 0 ? secWeightedSum / secTotalResponses : 0
+                      const secWeighted = secAvg * weight
+
+                      finalWeightedRating += secWeighted
+                      if (weight > 0) totalDefinedWeights += weight
 
                       if (idx % 2 === 0) {
                         doc.setFillColor(248, 248, 248)
                         doc.rect(14, y - 5, pageWidth - 28, 8, "F")
                       }
 
-                      const cleanName = sec.replace(/^[A-F]\.\s*/, "")
-                      doc.text(truncateText(cleanName, pageWidth - 50), 16, y)
+                      doc.setFontSize(11)
+                      doc.text(cleanName, 20, y)
                       doc.setFont("helvetica", "bold")
-                      doc.text(`${pct}%`, pageWidth - 28, y)
+                      doc.text(secAvg.toFixed(2), pageWidth - 20, y, { align: "right" })
                       doc.setFont("helvetica", "normal")
                       y += 8
                     })
 
                     // Overall row
-                    const overallPct = grandTotal > 0 ? Math.round((grandPositive / grandTotal) * 100) : 0
-                    doc.setFillColor(55, 65, 81)
-                    doc.rect(14, y - 5, pageWidth - 28, 9, "F")
+                    let descriptiveRating = "Poor"
+
+                    if (finalWeightedRating >= 4.5) {
+                      descriptiveRating = "Excellent"
+                    } else if (finalWeightedRating >= 3.5) {
+                      descriptiveRating = "Very Satisfactory"
+                    } else if (finalWeightedRating >= 2.5) {
+                      descriptiveRating = "Satisfactory"
+                    } else if (finalWeightedRating >= 1.5) {
+                      descriptiveRating = "Fair"
+                    }
+
+                    doc.setFillColor(51, 65, 85)
+                    doc.rect(14, y - 6, pageWidth - 28, 10, "F")
                     doc.setTextColor(255, 255, 255)
                     doc.setFont("helvetica", "bold")
-                    doc.text("OVERALL", 16, y)
-                    doc.text(`${overallPct}%`, pageWidth - 28, y)
-                    doc.setTextColor(30, 30, 30)
-                    y += 15
+                    doc.setFontSize(12)
+                    doc.text("Final Rating", 20, y)
+                    doc.setFontSize(12)
+                    doc.text(finalWeightedRating.toFixed(2), pageWidth - 20, y, { align: "right" })
+                    doc.setTextColor(30, 41, 59)
+                    y += 18
 
-                    // --- Rating Scale Legend Box ---
-                    doc.setFillColor(245, 247, 249)
-                    doc.setDrawColor(220, 225, 230)
-                    doc.roundedRect(14, y - 5, pageWidth - 28, 10, 1, 1, "FD")
-                    doc.setFontSize(8)
+                    // --- Rating Scale Description Box ---
+                    const boxY = y - 6
+                    const boxH = 46
+                    doc.setFillColor(248, 250, 252)
+                    doc.setDrawColor(226, 232, 240)
+                    doc.roundedRect(14, boxY, pageWidth - 28, boxH, 3, 3, "FD")
+
+                    doc.setFontSize(9)
                     doc.setFont("helvetica", "bold")
-                    doc.setTextColor(70, 80, 90)
-                    doc.text("Rating Scale Reference:", 18, y + 1.5)
+                    doc.setTextColor(51, 65, 85)
+                    doc.text("RATING SCALE DESCRIPTION:", 20, boxY + 7)
+
+                    doc.setFontSize(8)
                     doc.setFont("helvetica", "normal")
-                    doc.text("SA: Strongly Agree   |   A: Agree   |   D: Disagree   |   SD: Strongly Disagree", 55, y + 1.5)
-                    doc.setTextColor(30, 30, 30)
-                    y += 15
+                    doc.setTextColor(71, 85, 105)
+                    const scales = [
+                      "5 – Excellent (consistently demonstrates outstanding classroom management skills)",
+                      "4 – Very Satisfactory (often manages the class effectively, with minor areas for improvement)",
+                      "3 – Satisfactory (generally maintains acceptable classroom order and organization)",
+                      "2 – Fair (occasionally struggles with classroom control or organization)",
+                      "1 – Poor (rarely demonstrates effective classroom management)"
+                    ]
+
+                    scales.forEach((s, si) => {
+                      doc.text(s, 20, boxY + 13 + (si * 4.5))
+                    })
+
+                    // Horizontal line
+                    doc.setDrawColor(226, 232, 240)
+                    doc.line(20, boxY + 36, pageWidth - 20, boxY + 36)
+
+                    doc.setFont("helvetica", "bold")
+                    doc.text("Column Legend:", 20, boxY + 41)
+                    doc.setFont("helvetica", "normal")
+                    doc.text("E = Excellent  |  VS = Very Satisfactory  |  S = Satisfactory  |  F = Fair  |  P = Poor", 50, boxY + 41)
+
+                    y += boxH + 8
 
                     // --- Per-section question tables (comments last) ---
                     const orderedSecs = [...sortedSecs.filter(s => !s.toLowerCase().includes("comments")), ...sortedSecs.filter(s => s.toLowerCase().includes("comment"))]
@@ -1051,18 +1183,23 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                       const secQuestions = grouped[sec]
                       const cleanName = sec.replace(/^[A-F]\.\s*/, "")
                       const isVerbal = sec.toLowerCase().includes("comments")
+                      const margin = 20
+                      const optStartX = pageWidth - 105
+                      const spacing = 15
 
-                      // Page break
-                      if (y > pageHeight - 50) {
+                      // Page break threshold for new section
+                      if (y > pageHeight - 80) {
                         doc.addPage()
                         y = 18
                       }
 
                       // Section title
-                      doc.setFontSize(11)
+                      doc.setFontSize(13)
                       doc.setFont("helvetica", "bold")
-                      doc.text(cleanName, 14, y)
-                      y += 8
+                      doc.setTextColor(30, 41, 59)
+                      doc.text(cleanName, margin, y)
+                      y += 10
+                      doc.setTextColor(30, 41, 59)
 
                       if (isVerbal) {
                         // For Comment, list text responses
@@ -1095,26 +1232,22 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                         })
                       } else {
                         // Likert questions table
-                        // Get option headers from the first question
-                        const optHeaders = secQuestions[0]?.options || Object.keys(secQuestions[0]?.counts || {})
-
                         // Table header
-                        doc.setFillColor(55, 65, 81)
-                        const headerH = 8
-                        doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
-                        doc.setFontSize(8)
+                        doc.setFillColor(51, 65, 85)
+                        const headerH = 10
+                        doc.rect(margin, y - 6, pageWidth - (margin * 2), headerH, "F")
+                        doc.setFontSize(10)
                         doc.setTextColor(255, 255, 255)
                         doc.setFont("helvetica", "bold")
-                        doc.text("#", 16, y)
-                        doc.text("Question", 24, y)
+                        doc.text("#", margin + 4, y)
+                        doc.text("Question", margin + 12, y)
+
                         // Option columns
-                        const optStartX = pageWidth - 28 - (optHeaders.length * 22)
-                        optHeaders.forEach((opt, oi) => {
-                          const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
-                          doc.text(label, optStartX + (oi * 22), y)
+                        const labels = ["E", "VS", "S", "F", "P", "Total"]
+                        labels.forEach((label, oi) => {
+                          doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                         })
-                        doc.text("Total", pageWidth - 28, y)
-                        y += 6
+                        y += 8
 
                         doc.setTextColor(30, 30, 30)
                         doc.setFont("helvetica", "normal")
@@ -1122,53 +1255,55 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                         secQuestions.forEach((q, qi) => {
                           if (q.questionType === "text") return
 
-                          doc.setFontSize(8)
-                          const maxQWidth = optStartX - 28
+                          doc.setFontSize(9)
+                          const maxQWidth = optStartX - (margin + 12) - 10
                           const qLines = doc.splitTextToSize(q.questionText, maxQWidth)
-                          const lineH = 4.5
-                          const rowH = Math.max(8, qLines.length * lineH + 3)
+                          const lineH = 4.8
+                          const rowH = Math.max(12, qLines.length * lineH + 6)
+                          const centerShift = ((qLines.length - 1) * lineH) / 2
 
                           // Check if row fits on page, if not add new page with header
                           if (y + rowH - 5 > pageHeight - 15) {
                             doc.addPage()
                             y = 18
-                            doc.setFillColor(55, 65, 81)
-                            doc.rect(14, y - 5, pageWidth - 28, headerH, "F")
-                            doc.setFontSize(8)
+                            doc.setFillColor(51, 65, 85)
+                            doc.rect(margin, y - 6, pageWidth - (margin * 2), headerH, "F")
+                            doc.setFontSize(10)
                             doc.setTextColor(255, 255, 255)
                             doc.setFont("helvetica", "bold")
-                            doc.text("#", 16, y)
-                            doc.text("Question", 24, y)
-                            optHeaders.forEach((opt, oi) => {
-                              const label = opt === "Strongly Agree" ? "SA" : opt === "Agree" ? "A" : opt === "Disagree" ? "D" : opt === "Strongly Disagree" ? "SD" : opt.substring(0, 4)
-                              doc.text(label, optStartX + (oi * 22), y)
+                            doc.text("#", margin + 4, y)
+                            // "Question" text omitted for cleaner look on continuation pages
+
+                            const labels = ["E", "VS", "S", "F", "P", "Total"]
+                            labels.forEach((label, oi) => {
+                              doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                             })
-                            doc.text("Total", pageWidth - 28, y)
-                            doc.setTextColor(30, 30, 30)
+
+                            doc.setTextColor(30, 41, 59)
                             doc.setFont("helvetica", "normal")
-                            y += 6
+                            y += 8
                           }
 
                           // Alternate row background
                           if (qi % 2 === 0) {
                             doc.setFillColor(248, 248, 248)
-                            doc.rect(14, y - 5, pageWidth - 28, rowH, "F")
+                            doc.rect(margin, y - 6, pageWidth - (margin * 2), rowH, "F")
                           }
 
-                          doc.setFontSize(8)
-                          doc.text(`${qi + 1}`, 16, y)
+                          doc.setFontSize(9)
+                          doc.text(`${qi + 1}`, margin + 4, y + centerShift)
                           // Print each line of the question text
                           qLines.forEach((line: string, li: number) => {
-                            doc.text(line, 24, y + (li * lineH))
+                            doc.text(line, margin + 12, y + (li * lineH))
                           })
 
-                          const opts = q.options || Object.keys(q.counts)
+                          const opts = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
                           const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
                           opts.forEach((opt, oi) => {
                             const count = q.counts[opt] || 0
-                            doc.text(`${count}`, optStartX + (oi * 22), y)
+                            doc.text(`${count}`, optStartX + (oi * spacing), y + centerShift, { align: "center" })
                           })
-                          doc.text(`${total}`, pageWidth - 28, y)
+                          doc.text(`${total}`, optStartX + (5 * spacing), y + centerShift, { align: "center" })
                           y += rowH
                         })
                       }
@@ -1280,7 +1415,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                         if (q.questionType !== "text") {
                           const counts = q.counts
                           const total = Object.values(counts).reduce((a, b) => a + b, 0)
-                          // Consider first two options as positive (e.g., "Strongly Agree", "Agree")
+                          // Consider first two options as positive (e.g., "Excellent", "Very Satisfactory")
                           const options = q.options || Object.keys(counts)
                           const positiveCount = (counts[options[0]] || 0) + (counts[options[1]] || 0)
                           totalPositive += positiveCount
@@ -1305,9 +1440,31 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                                 </div>
                                 <div className={`${sectionColors.bg} border ${sectionColors.border} rounded-lg px-4 py-2 text-center`}>
                                   <div className={`text-2xl font-bold ${sectionColors.text}`}>
-                                    {overallPercentage}%
+                                    {(() => {
+                                      let secWeightedSum = 0
+                                      let secTotalResponses = 0
+                                      sectionQuestions.forEach(q => {
+                                        if (q.questionType !== "text") {
+                                          const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                                          opts.forEach((opt, oi) => {
+                                            const val = q.counts[opt] || 0
+                                            let score = 0
+                                            const label = opt.toLowerCase()
+                                            if (label === "excellent" || label === "excellent" || oi === 0) score = 5
+                                            else if (label === "very satisfactory" || label === "verysatisfactory" || oi === 1) score = 4
+                                            else if (label === "satisfactory" || oi === 2) score = 3
+                                            else if (label === "fair" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                                            else if (label === "poor" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+
+                                            secWeightedSum += val * score
+                                            secTotalResponses += val
+                                          })
+                                        }
+                                      })
+                                      return secTotalResponses > 0 ? (secWeightedSum / secTotalResponses).toFixed(2) : "0.00"
+                                    })()}
                                   </div>
-                                  <div className="text-xs text-muted-foreground">Overall Positive</div>
+                                  <div className="text-xs text-muted-foreground">Average Score</div>
                                 </div>
                               </div>
                             </div>

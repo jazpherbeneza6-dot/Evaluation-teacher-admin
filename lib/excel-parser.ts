@@ -129,20 +129,20 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
     // We specifically look for the 5 evaluation sections
     let sectionColumns = sheet.headers.filter(header => {
       const headerText = header.toString()
+      const lowerHeader = headerText.toLowerCase()
+      
       // Match exact section headers with percentages OR Comments
-      const isCommentSection = headerText.toLowerCase().includes('comment')
+      const isCommentSection = lowerHeader.includes('comment')
+      
+      // Standardize section detection: handle both "and" and "&", case-insensitive
       const isStandardSection = (
-        headerText.includes('Instructional Competence') ||
-        headerText.includes('Classroom Management') ||
-        headerText.includes('Professionalism') ||
-        headerText.includes('Student Support') ||
-        headerText.includes('Research')
-      ) && (
-          headerText.includes('40%') ||
-          headerText.includes('20%') ||
-          headerText.includes('10%') ||
-          headerText.includes('%')
-        )
+        lowerHeader.includes('instructional competence') ||
+        lowerHeader.includes('classroom management') ||
+        (lowerHeader.includes('professionalism') && (lowerHeader.includes('and') || lowerHeader.includes('&')) && lowerHeader.includes('personal')) ||
+        (lowerHeader.includes('student support') && (lowerHeader.includes('and') || lowerHeader.includes('&')) && lowerHeader.includes('development')) ||
+        lowerHeader.includes('research')
+      ) && lowerHeader.includes('%')
+      
       return isStandardSection || isCommentSection
     })
 
@@ -167,7 +167,10 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
           headerText.includes('competence') ||
           headerText.includes('management') ||
           headerText.includes('professionalism') ||
+          headerText.includes('personal') ||
+          headerText.includes('qualities') ||
           headerText.includes('support') ||
+          headerText.includes('development') ||
           headerText.includes('research') ||
           headerText.includes('instructional') ||
           headerText.includes('classroom') ||
@@ -270,12 +273,11 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
 
           // Only skip Likert scale options if they're exact matches (not if they appear in question text)
           const isLikertScale = (
-            lowerText === 'strongly agree' ||
-            lowerText === 'strongly disagree' ||
-            lowerText === 'agree' ||
-            lowerText === 'disagree' ||
-            lowerText === 'undecided' ||
-            lowerText === 'neutral'
+            lowerText === 'excellent' ||
+            lowerText === 'very satisfactory' ||
+            lowerText === 'satisfactory' ||
+            lowerText === 'fair' ||
+            lowerText === 'poor'
           )
 
           // Skip only if it's a header or Likert scale options
@@ -430,12 +432,11 @@ export function validateParsedQuestions(questions: ParsedQuestion[]): {
 
     // Only exclude if it's an exact Likert scale option (not if it contains the word)
     const isExactLikertOption = (
-      lowerText === 'strongly agree' ||
-      lowerText === 'strongly disagree' ||
-      lowerText === 'agree' ||
-      lowerText === 'disagree' ||
-      lowerText === 'undecided' ||
-      lowerText === 'neutral'
+      lowerText === 'excellent' ||
+      lowerText === 'very satisfactory' ||
+      lowerText === 'satisfactory' ||
+      lowerText === 'fair' ||
+      lowerText === 'poor'
     )
 
     // Exclude if it's just a percentage or weight indicator
@@ -493,7 +494,7 @@ export function convertToDatabaseFormat(questions: ParsedQuestion[], professors:
       questionText: question.questionText,
       questionType: "Likert Scale",
       isActive: true,
-      options: ["Strongly Agree", "Agree", "Disagree", "Strongly Disagree"], // Default options
+      options: ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"], // Default options
       section: question.section,
       weight: question.weight,
     }
