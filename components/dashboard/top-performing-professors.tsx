@@ -315,7 +315,7 @@ export function TopPerformingProfessors() {
 
       // Pre-calculate global ranks for this category with tie-breaker
       const globalSorted = [...categoryProfessors].sort((a, b) => {
-        const scoreDiff = b.performanceScore - a.performanceScore
+        const scoreDiff = b.averageRating - a.averageRating
         if (scoreDiff !== 0) return scoreDiff
         return a.professorName.localeCompare(b.professorName)
       })
@@ -419,7 +419,7 @@ export function TopPerformingProfessors() {
             doc.text(`${rank}`, colX[0], y)
             doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
 
-            const label = getPerformanceLabel(professor.performanceScore)
+            const label = getPerformanceLabel(professor.averageRating)
             if (label === "Excellent") doc.setTextColor(21, 128, 61)
             else if (label === "Very Satisfactory") doc.setTextColor(37, 99, 235)
             else if (label === "Satisfactory") doc.setTextColor(180, 83, 9)
@@ -464,7 +464,7 @@ export function TopPerformingProfessors() {
           doc.text(truncateText(professor.professorName || "", colWidths[1]), colX[1], y)
           doc.text(truncateText(professor.departmentName || "", colWidths[2]), colX[2], y)
 
-          const label = getPerformanceLabel(professor.performanceScore)
+          const label = getPerformanceLabel(professor.averageRating)
           if (label === "Excellent") doc.setTextColor(21, 128, 61)
           else if (label === "Very Satisfactory") doc.setTextColor(37, 99, 235)
           else if (label === "Satisfactory") doc.setTextColor(180, 83, 9)
@@ -627,7 +627,7 @@ export function TopPerformingProfessors() {
                           (() => {
                             // Pre-calculate global ranks based on SCORE, with name TIE-BREAKER
                             const scoreSortedProfessors = [...filteredAndSortedProfessors].sort((a, b) => {
-                              const scoreDiff = b.performanceScore - a.performanceScore
+                              const scoreDiff = b.averageRating - a.averageRating
                               if (scoreDiff !== 0) return scoreDiff
                               return a.professorName.localeCompare(b.professorName)
                             })
@@ -680,21 +680,21 @@ export function TopPerformingProfessors() {
                                         <div className="space-y-1 w-full max-w-[250px]">
                                           <div className="relative h-2.5 w-full bg-muted rounded-full overflow-hidden shadow-inner">
                                             <div
-                                              className={`h-full transition-all duration-700 ease-out ${getProgressBarColor(professor.performanceScore)}`}
-                                              style={{ width: `${professor.performanceScore}%` }}
+                                              className={`h-full transition-all duration-700 ease-out ${getProgressBarColor(professor.averageRating)}`}
+                                              style={{ width: `${(professor.averageRating / 5) * 100}%` }}
                                             />
                                           </div>
                                           <Badge
                                             variant="outline"
-                                            className={`text-[10px] h-4 font-semibold ${getPerformanceColor(professor.performanceScore)} border-current/20`}
+                                            className={`text-[10px] h-4 font-semibold ${getPerformanceColor(professor.averageRating)} border-current/20`}
                                           >
-                                            {getPerformanceLabel(professor.performanceScore)}
+                                            {getPerformanceLabel(professor.averageRating)}
                                           </Badge>
                                         </div>
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        <div className={`font-bold text-sm sm:text-base ${getPerformanceColor(professor.performanceScore)}`}>
-                                          {professor.performanceScore}%
+                                        <div className={`font-bold text-sm sm:text-base ${getPerformanceColor(professor.averageRating)}`}>
+                                          {professor.averageRating.toFixed(2)}
                                         </div>
                                       </TableCell>
                                     </TableRow>
