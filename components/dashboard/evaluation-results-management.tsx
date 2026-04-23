@@ -433,9 +433,8 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
             const resolvedQuestionType = String(response.questionType || questionObj?.questionType || "").toLowerCase()
             if (!aggregates[qid]) {
               let baseOptions = Array.isArray(response.options) ? response.options : []
-              // Force standard order for Likert Scale to ensure consistency even with existing data
-              if (resolvedQuestionType === "likert scale") {
-                baseOptions = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
+              if ((!baseOptions || baseOptions.length === 0) && resolvedQuestionType === "likert scale") {
+                baseOptions = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
               }
               const initialCounts: Record<string, number> = {}
               baseOptions.forEach((opt) => {
@@ -456,22 +455,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                 aggregates[qid].textResponses!.push(String(response.answer))
               }
             } else if (resolvedQuestionType === "likert scale") {
-              let answerKey = String(response.answer)
-              const answerIndex = parseInt(answerKey, 10)
-
-              // If answer is an index, resolve it using the original options
-              if (!isNaN(answerIndex) && Array.isArray(response.options) && response.options[answerIndex]) {
-                answerKey = response.options[answerIndex]
-              }
-
-              // Normalize to match our standard baseOptions labels
-              const normalized = answerKey.toLowerCase()
-              if (normalized === "excellent") answerKey = "Excellent"
-              else if (normalized.includes("very satisfactory") || normalized === "verysatisfactory") answerKey = "Very Satisfactory"
-              else if (normalized === "satisfactory") answerKey = "Satisfactory"
-              else if (normalized === "fair") answerKey = "Fair"
-              else if (normalized === "poor") answerKey = "Poor"
-
+              const answerKey = String(response.answer)
               aggregates[qid].counts[answerKey] = (aggregates[qid].counts[answerKey] || 0) + 1
             } else {
               const answerKey = String(response.answer)
@@ -1468,27 +1452,16 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                                       let secTotalResponses = 0
                                       sectionQuestions.forEach(q => {
                                         if (q.questionType !== "text") {
-                                          const opts = q.options || ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
+                                          const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
                                           opts.forEach((opt, oi) => {
                                             const val = q.counts[opt] || 0
-                                            const label = opt.toLowerCase()
                                             let score = 0
-                                            if (label.includes("excellent") || label === "5") score = 5
-                                            else if (label.includes("very satisfactory") || label.includes("verysatisfactory") || label === "4") score = 4
-                                            else if (label.includes("satisfactory") || label === "3") score = 3
-                                            else if (label.includes("fair") || label === "2") score = 2
-                                            else if (label.includes("poor") || label === "1") score = 1
-                                            // Fallback for cases where label might not match exactly but we know the position
-                                            else if (score === 0) {
-                                              const firstOpt = opts[0].toLowerCase()
-                                              if (firstOpt.includes("excellent")) {
-                                                // Old order: Excellent (0) to Poor (4)
-                                                score = [5, 4, 3, 2, 1][oi] || 0
-                                              } else {
-                                                // New order: Poor (0) to Excellent (4)
-                                                score = [1, 2, 3, 4, 5][oi] || 0
-                                              }
-                                            }
+                                            const label = opt.toLowerCase()
+                                            if (label === "excellent" || label === "excellent" || oi === 0) score = 5
+                                            else if (label === "very satisfactory" || label === "verysatisfactory" || oi === 1) score = 4
+                                            else if (label === "satisfactory" || oi === 2) score = 3
+                                            else if (label === "fair" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
+                                            else if (label === "poor" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
 
                                             secWeightedSum += val * score
                                             secTotalResponses += val
