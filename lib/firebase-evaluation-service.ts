@@ -18,6 +18,7 @@ export interface FirebaseEvaluationResult {
     questionType: string
     section?: string
   }[]
+  semester?: string | null
   createdAt?: Date
 }
 

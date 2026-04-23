@@ -134,7 +134,7 @@ const SECTION_COLORS: Record<string, { bg: string; border: string; text: string 
 }
 
 // Navigation levels
-type ViewLevel = "years" | "history-type-selection" | "periods" | "departments" | "professors" | "results" | "performance-rankings"
+type ViewLevel = "years" | "history-type-selection" | "semester-selection" | "periods" | "departments" | "professors" | "results" | "performance-rankings"
 
 interface EvaluationHistoryManagementProps {
     questions: EvaluationQuestion[]
@@ -179,6 +179,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
     const [performanceSortBy, setPerformanceSortBy] = useState<"score" | "name" | "department">("score")
     const [performanceSortOrder, setPerformanceSortOrder] = useState<"asc" | "desc">("desc")
     const [performanceCategory, setPerformanceCategory] = useState<string>("Instructional Competence")
+    const [selectedSemesterFilter, setSelectedSemesterFilter] = useState<"all" | "1st" | "2nd">("all")
 
     // Load history data
     useEffect(() => {
@@ -228,8 +229,11 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
     const periodsForYear = useMemo(() => {
         if (selectedYear === null) return []
         const yearData = historyByYears.find(y => y.year === selectedYear)
-        return yearData?.periods || []
-    }, [historyByYears, selectedYear])
+        const allPeriods = yearData?.periods || []
+        // Filter by semester if selected
+        if (selectedSemesterFilter === "all") return allPeriods
+        return allPeriods.filter(p => p.semester === selectedSemesterFilter)
+    }, [historyByYears, selectedYear, selectedSemesterFilter])
 
     // Get departments for selected period (unique list)
     const departmentsForPeriod = useMemo(() => {
@@ -260,6 +264,12 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
     // Handle history type selection
     const handleHistoryTypeSelect = (type: "evaluation" | "performance") => {
         setHistoryType(type)
+        setViewLevel("semester-selection")
+    }
+
+    // Handle semester selection
+    const handleSemesterSelect = (semester: "1st" | "2nd") => {
+        setSelectedSemesterFilter(semester)
         setViewLevel("periods")
     }
 
@@ -322,8 +332,11 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
             setPerformanceSearch("")
             setViewLevel("periods")
         } else if (viewLevel === "periods") {
-            setHistoryType(null)
+            setSelectedSemesterFilter("all")
             setPeriodsSearch("")  // Reset periods search
+            setViewLevel("semester-selection")
+        } else if (viewLevel === "semester-selection") {
+            setHistoryType(null)
             setViewLevel("history-type-selection")
         } else if (viewLevel === "history-type-selection") {
             setSelectedYear(null)
@@ -375,7 +388,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                     if (!aggregates[qid]) {
                         let baseOptions = Array.isArray(response.options) ? response.options : []
                         if ((!baseOptions || baseOptions.length === 0) && response.questionType === "Likert Scale") {
-                            baseOptions = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                            baseOptions = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
                         }
                         const initialCounts: Record<string, number> = {}
                         baseOptions.forEach((opt: string) => {
@@ -687,7 +700,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         doc.setFont("helvetica", "bold")
         doc.text("Column Legend:", 24, boxY + 41)
         doc.setFont("helvetica", "normal")
-        doc.text("E = Excellent  |  VS = Very Satisfactory  |  S = Satisfactory  |  F = Fair  |  P = Poor", 54, boxY + 41)
+        doc.text("P = Poor  |  F = Fair  |  S = Satisfactory  |  VS = Very Satisfactory  |  E = Excellent", 54, boxY + 41)
 
         y += boxH + 8
 
@@ -758,7 +771,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                 doc.text("Question", margin + 12, y)
 
                 // Option columns
-                const labels = ["E", "VS", "S", "F", "P", "Total"]
+                const labels = ["P", "F", "S", "VS", "E", "Total"]
                 labels.forEach((label, oi) => {
                     doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                 })
@@ -789,7 +802,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                         doc.text("#", margin + 4, y)
                         // "Question" text omitted for cleaner look on continuation pages
 
-                        const labels = ["E", "VS", "S", "F", "P", "Total"]
+                        const labels = ["P", "F", "S", "VS", "E", "Total"]
                         labels.forEach((label, oi) => {
                             doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                         })
@@ -812,7 +825,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                         doc.text(line, margin + 12, y + (li * lineH))
                     })
 
-                    const opts = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                    const opts = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
                     const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
                     opts.forEach((opt, oi) => {
                         const count = q.counts[opt] || 0
@@ -1167,7 +1180,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                 Back
                             </Button>
                             <div className="flex items-center text-sm text-muted-foreground">
-                                <span className="hover:text-foreground cursor-pointer" onClick={() => { setViewLevel("years"); setSelectedYear(null); setHistoryType(null); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
+                                <span className="hover:text-foreground cursor-pointer" onClick={() => { setViewLevel("years"); setSelectedYear(null); setHistoryType(null); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); setSelectedSemesterFilter("all"); }}>
                                     History
                                 </span>
                                 {selectedYear && (
@@ -1181,8 +1194,16 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                 {historyType && (
                                     <>
                                         <ChevronRight className="h-4 w-4 mx-1" />
-                                        <span className={viewLevel === "periods" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { setViewLevel("periods"); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
+                                        <span className={viewLevel === "semester-selection" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { setViewLevel("semester-selection"); setSelectedSemesterFilter("all"); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
                                             {historyType === "performance" ? "Performance" : "Evaluations"}
+                                        </span>
+                                    </>
+                                )}
+                                {selectedSemesterFilter !== "all" && (
+                                    <>
+                                        <ChevronRight className="h-4 w-4 mx-1" />
+                                        <span className={viewLevel === "periods" ? "text-foreground font-medium" : "hover:text-foreground cursor-pointer"} onClick={() => { setViewLevel("periods"); setSelectedPeriod(null); setSelectedDepartment(null); setSelectedProfessorId(null); }}>
+                                            {selectedSemesterFilter} Semester
                                         </span>
                                     </>
                                 )}
@@ -1280,10 +1301,12 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                     <Calendar className="h-5 w-5 text-blue-600" />
                                 </div>
                                 <div>
-                                    <CardTitle className="text-xl font-bold text-gray-900">Archives for {selectedYear}</CardTitle>
-                                    <CardDescription>Choose how you want to browse the archived data</CardDescription>
+                                    <CardTitle className="text-xl font-bold text-gray-900">BACK UP FILES for {selectedYear}</CardTitle>
+                                    <CardDescription>Choose how you want to browse the backed up data</CardDescription>
                                 </div>
                             </div>
+
+
 
                             <div className="grid gap-8 sm:grid-cols-2 max-w-4xl mx-auto px-4">
                                 <Card
@@ -1320,6 +1343,53 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                         <span>View Rankings</span>
                                         <ChevronRight className="h-4 w-4" />
                                     </div>
+                                </Card>
+                            </div>
+                        </>
+                    )}
+
+                    {/* LEVEL 1.7: Semester Selection */}
+                    {viewLevel === "semester-selection" && (
+                        <>
+                            <div className="flex items-center gap-2 mb-8">
+                                <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100">
+                                    <FileText className="h-5 w-5 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <CardTitle className="text-xl font-bold text-gray-900">
+                                        Select Semester for {selectedYear}
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Browse {historyType === "performance" ? "performance" : "evaluation"} data by semester
+                                    </CardDescription>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-6 sm:grid-cols-2 max-w-3xl mx-auto px-4">
+                                <Card
+                                    className="group cursor-pointer transition-all duration-500 border-2 border-blue-100 hover:border-blue-500 bg-white hover:shadow-xl hover:scale-[1.02] p-8 flex flex-col items-center text-center"
+                                    onClick={() => handleSemesterSelect("1st")}
+                                >
+                                    <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4 group-hover:bg-blue-100 transition-colors border border-blue-100">
+                                        <span className="text-3xl font-black text-blue-600">1</span>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-gray-900">1st Semester</h3>
+                                    <p className="text-muted-foreground text-sm mt-2">
+                                        View archives from the first half of the academic year
+                                    </p>
+                                </Card>
+
+                                <Card
+                                    className="group cursor-pointer transition-all duration-500 border-2 border-blue-100 hover:border-blue-500 bg-white hover:shadow-xl hover:scale-[1.02] p-8 flex flex-col items-center text-center"
+                                    onClick={() => handleSemesterSelect("2nd")}
+                                >
+                                    <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4 group-hover:bg-blue-100 transition-colors border border-blue-100">
+                                        <span className="text-3xl font-black text-blue-600">2</span>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-gray-900">2nd Semester</h3>
+                                    <p className="text-muted-foreground text-sm mt-2">
+                                        View archives from the second half of the academic year
+                                    </p>
                                 </Card>
                             </div>
                         </>
@@ -1398,6 +1468,9 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                                                 <FileText className="h-3 w-3" />
                                                                 {period.totalEvaluations} eval{period.totalEvaluations !== 1 ? 's' : ''}
                                                             </span>
+                                                            <Badge variant="outline" className="text-[10px] h-5 font-bold border-primary/30 text-primary">
+                                                                {period.semester === "2nd" ? "2nd Sem" : "1st Sem"}
+                                                            </Badge>
                                                         </div>
                                                     </div>
                                                 </div>

@@ -1936,12 +1936,13 @@ const DEADLINE_DOC_ID = "current"
 
 export const evaluationDeadlineService = {
   // Create or update the single deadline document
-  async create(startDate: Date, endDate: Date, isActive: boolean = true): Promise<string> {
+  async create(startDate: Date, endDate: Date, isActive: boolean = true, semester: "1st" | "2nd" = "1st"): Promise<string> {
     try {
       console.log("🔵 Saving deadline to Firestore:", {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
         isActive,
+        semester,
         documentId: DEADLINE_DOC_ID,
       })
 
@@ -1960,6 +1961,7 @@ export const evaluationDeadlineService = {
       const deadlineData = {
         startDate: startTimestamp,
         endDate: endTimestamp,
+        semester,
         isActive,
         updatedAt: Timestamp.now(),
         ...(exists ? {} : { createdAt: Timestamp.now() }),
@@ -1968,6 +1970,7 @@ export const evaluationDeadlineService = {
       console.log("🔵 Deadline data to save:", {
         startDate: startTimestamp.toDate().toISOString(),
         endDate: endTimestamp.toDate().toISOString(),
+        semester,
         isActive,
       })
 
@@ -2042,6 +2045,7 @@ export const evaluationDeadlineService = {
         id: deadlineDoc.id,
         startDate: data.startDate?.toDate?.() || new Date(data.startDate),
         endDate: data.endDate?.toDate?.() || new Date(data.endDate),
+        semester: data.semester || "1st",
         isActive: data.isActive ?? true,
         createdAt: data.createdAt?.toDate?.() || new Date(),
         updatedAt: data.updatedAt?.toDate?.() || new Date(),
@@ -2051,6 +2055,7 @@ export const evaluationDeadlineService = {
         id: deadline.id,
         startDate: deadline.startDate.toISOString(),
         endDate: deadline.endDate.toISOString(),
+        semester: deadline.semester,
         isActive: deadline.isActive,
       })
 
@@ -2094,6 +2099,7 @@ export const evaluationDeadlineService = {
         id: deadlineDoc.id,
         startDate: data.startDate?.toDate?.() || new Date(data.startDate),
         endDate: data.endDate?.toDate?.() || new Date(data.endDate),
+        semester: data.semester || "1st",
         isActive: data.isActive ?? true,
         createdAt: data.createdAt?.toDate?.() || new Date(),
         updatedAt: data.updatedAt?.toDate?.() || new Date(),
@@ -2103,6 +2109,7 @@ export const evaluationDeadlineService = {
         id: deadline.id,
         startDate: deadline.startDate.toISOString(),
         endDate: deadline.endDate.toISOString(),
+        semester: deadline.semester,
         isActive: deadline.isActive,
       })
 
@@ -2117,11 +2124,12 @@ export const evaluationDeadlineService = {
     }
   },
 
-  async update(id: string, startDate: Date, endDate: Date, isActive: boolean): Promise<void> {
+  async update(id: string, startDate: Date, endDate: Date, isActive: boolean, semester: "1st" | "2nd" = "1st"): Promise<void> {
     try {
       console.log("🔵 Updating deadline via update method:", {
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
+        semester,
         isActive,
       })
       // Always update the single document (ignore id parameter, use DEADLINE_DOC_ID)
@@ -2129,6 +2137,7 @@ export const evaluationDeadlineService = {
       await updateDoc(deadlineRef, {
         startDate: Timestamp.fromDate(startDate),
         endDate: Timestamp.fromDate(endDate),
+        semester,
         isActive,
         updatedAt: Timestamp.now(),
       })

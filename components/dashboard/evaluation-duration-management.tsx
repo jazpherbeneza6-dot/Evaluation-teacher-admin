@@ -58,6 +58,7 @@ export function EvaluationDurationManagement(): JSX.Element {
     time: "",
   })
   const [isLoadingDeadline, setIsLoadingDeadline] = useState(false)
+  const [selectedSemester, setSelectedSemester] = useState<"1st" | "2nd">("1st")
 
   // Helper function to convert Date to DateTimeFields
   const dateToFields = (date: Date): DateTimeFields => {
@@ -112,6 +113,7 @@ export function EvaluationDurationManagement(): JSX.Element {
           const endDate = new Date(deadline.endDate)
           setStartDateTime(dateToFields(startDate))
           setEndDateTime(dateToFields(endDate))
+          setSelectedSemester(deadline.semester || "1st")
         } else {
           // If no deadline exists, set current date/time as default
           const now = new Date()
@@ -148,6 +150,7 @@ export function EvaluationDurationManagement(): JSX.Element {
       const endDate = new Date(activeDeadline.endDate)
       setStartDateTime(dateToFields(now))
       setEndDateTime(dateToFields(endDate))
+      setSelectedSemester(activeDeadline.semester || "1st")
     } else {
       // If no deadline, set current date/time as start and 1 hour from now as end
       const defaultEndDate = new Date(now.getTime() + 60 * 60 * 1000) // 1 hour from now
@@ -169,6 +172,7 @@ export function EvaluationDurationManagement(): JSX.Element {
         const endDate = new Date(activeDeadline.endDate)
         setStartDateTime(dateToFields(now))
         setEndDateTime(dateToFields(endDate))
+        setSelectedSemester(activeDeadline.semester || "1st")
       } else {
         // If no deadline exists, set current date/time as start and 1 hour from now as end
         const defaultEndDate = new Date(now.getTime() + 60 * 60 * 1000) // 1 hour from now
@@ -269,13 +273,22 @@ export function EvaluationDurationManagement(): JSX.Element {
       // Log the exact values being saved for debugging
 
 
+      // Capture active deadline info before updating for archiving purposes
+      const archiveStartDate = activeDeadline ? new Date(activeDeadline.startDate) : startDate
+      const archiveEndDate = activeDeadline ? new Date(activeDeadline.endDate) : endDate
+      const archiveSemester = (activeDeadline?.semester as "1st" | "2nd") || selectedSemester
+
       // Always update the single document (create if doesn't exist)
-      // This will save the exact date/time values to the database
-      await evaluationDeadlineService.create(startDate, endDate, true)
+      // This will save the exact date/time values to the database for the NEW period
+      await evaluationDeadlineService.create(startDate, endDate, true, selectedSemester)
 
       // Archive all previous evaluation results to History when a new deadline is set
-      // This preserves the data so professors can view past evaluation periods
-      const archiveResult = await evaluationHistoryService.archiveEvaluationResults(startDate, endDate)
+      // Use the info from the period that just finished (activeDeadline)
+      const archiveResult = await evaluationHistoryService.archiveEvaluationResults(
+        archiveStartDate, 
+        archiveEndDate, 
+        archiveSemester
+      )
       if (archiveResult.success && archiveResult.archivedCount > 0) {
         console.log(`Archived ${archiveResult.archivedCount} evaluation results to history`)
       }
@@ -398,6 +411,13 @@ export function EvaluationDurationManagement(): JSX.Element {
                   </p>
                 </div>
 
+                {/* Semester Badge */}
+                <div className="mb-4">
+                  <Badge variant="outline" className="text-xs font-semibold border-primary/30 text-primary">
+                    {activeDeadline.semester === "2nd" ? "2nd Semester" : "1st Semester"}
+                  </Badge>
+                </div>
+
                 {/* Status Badge */}
                 {deadlineStatus && (
                   <div className="mb-4">
@@ -448,11 +468,46 @@ export function EvaluationDurationManagement(): JSX.Element {
               Set Evaluation Deadline
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              Set the start and end date for the evaluation period. Students can only submit evaluations during this time.
+              Set the semester, start and end date for the evaluation period. Students can only submit evaluations during this time.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:gap-6 py-3 sm:py-4">
-            {/* Start Date & Time */}
+            {/* Semester Selection */}
+            <div className="grid gap-3 sm:gap-4">
+              <div>
+                <Label className="text-sm sm:text-base font-semibold">Semester</Label>
+                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">
+                  Select which semester this evaluation period is for
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={selectedSemester === "1st" ? "default" : "outline"}
+                  className={`flex-1 text-sm font-medium transition-all ${
+                    selectedSemester === "1st"
+                      ? "shadow-md"
+                      : "hover:bg-muted/50"
+                  }`}
+                  onClick={() => setSelectedSemester("1st")}
+                >
+                  1st Semester
+                </Button>
+                <Button
+                  type="button"
+                  variant={selectedSemester === "2nd" ? "default" : "outline"}
+                  className={`flex-1 text-sm font-medium transition-all ${
+                    selectedSemester === "2nd"
+                      ? "shadow-md"
+                      : "hover:bg-muted/50"
+                  }`}
+                  onClick={() => setSelectedSemester("2nd")}
+                >
+                  2nd Semester
+                </Button>
+              </div>
+            </div>
+
             <div className="grid gap-3 sm:gap-4">
               <div>
                 <Label className="text-sm sm:text-base font-semibold">Start Date & Time</Label>

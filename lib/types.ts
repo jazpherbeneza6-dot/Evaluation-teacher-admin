@@ -180,6 +180,7 @@ export interface EvaluationResult {
   sessionId?: string // Session ID ng student (from responses array - para sa unique student counting)
   responses: EvaluationResultResponse[] // Array ng responses
   submittedAt?: Date // Kailan na-submit (optional)
+  semester?: string | null // Semester ng evaluation (1st or 2nd)
   createdAt: Date // Kailan ginawa
 }
 
@@ -210,6 +211,7 @@ export interface EvaluationDeadline {
   id: string // Unique ID ng deadline
   startDate: Date // Kailan magsisimula ang evaluation period
   endDate: Date // Kailan matatapos ang evaluation period (deadline)
+  semester: "1st" | "2nd" // Kung anong semester (1st Sem o 2nd Sem)
   isActive: boolean // Kung active ba ang deadline
   createdAt: Date // Kailan ginawa
   updatedAt: Date // Kailan na-update

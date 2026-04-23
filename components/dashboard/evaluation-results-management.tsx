@@ -536,7 +536,14 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                 <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               </div>
               <div data-section="faculties-header-text">
-                <CardTitle className="text-lg sm:text-xl md:text-2xl font-bold text-foreground">Faculties Evaluation Results</CardTitle>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <CardTitle className="text-lg sm:text-xl md:text-2xl font-bold text-foreground">Faculties Evaluation Results</CardTitle>
+                  {activeDeadline && (
+                    <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 h-6 px-2 text-[10px] sm:text-xs font-bold whitespace-nowrap">
+                      {activeDeadline.semester === "2nd" ? "2nd Sem" : "1st Sem"}
+                    </Badge>
+                  )}
+                </div>
                 <CardDescription className="text-xs sm:text-sm md:text-base mt-0.5 sm:mt-1">Select a department to view evaluation results for professors</CardDescription>
               </div>
             </div>
@@ -1173,7 +1180,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                     doc.setFont("helvetica", "bold")
                     doc.text("Column Legend:", 20, boxY + 41)
                     doc.setFont("helvetica", "normal")
-                    doc.text("E = Excellent  |  VS = Very Satisfactory  |  S = Satisfactory  |  F = Fair  |  P = Poor", 50, boxY + 41)
+                    doc.text("P = Poor  |  F = Fair  |  S = Satisfactory  |  VS = Very Satisfactory  |  E = Excellent", 50, boxY + 41)
 
                     y += boxH + 8
 
@@ -1243,7 +1250,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                         doc.text("Question", margin + 12, y)
 
                         // Option columns
-                        const labels = ["E", "VS", "S", "F", "P", "Total"]
+                        const labels = ["P", "F", "S", "VS", "E", "Total"]
                         labels.forEach((label, oi) => {
                           doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                         })
@@ -1274,7 +1281,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                             doc.text("#", margin + 4, y)
                             // "Question" text omitted for cleaner look on continuation pages
 
-                            const labels = ["E", "VS", "S", "F", "P", "Total"]
+                            const labels = ["P", "F", "S", "VS", "E", "Total"]
                             labels.forEach((label, oi) => {
                               doc.text(label, optStartX + (oi * spacing), y, { align: "center" })
                             })
@@ -1297,7 +1304,7 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                             doc.text(line, margin + 12, y + (li * lineH))
                           })
 
-                          const opts = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                          const opts = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
                           const total = Object.values(q.counts).reduce((a, b) => a + b, 0)
                           opts.forEach((opt, oi) => {
                             const count = q.counts[opt] || 0

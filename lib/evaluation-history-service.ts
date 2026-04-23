@@ -19,6 +19,7 @@ export interface EvaluationHistoryEntry {
     year: number
     startDate: Date
     endDate: Date
+    semester: "1st" | "2nd"
     archivedAt: Date
     professorEvaluations: {
         professorId: string
@@ -36,6 +37,7 @@ export interface HistoryByYear {
         id: string
         startDate: Date
         endDate: Date
+        semester: "1st" | "2nd"
         archivedAt: Date
         professorCount: number
         totalEvaluations: number
@@ -45,7 +47,7 @@ export interface HistoryByYear {
 export const evaluationHistoryService = {
     // Archive all current evaluation results to history
     // Called when deadline is updated
-    async archiveEvaluationResults(startDate: Date, endDate: Date): Promise<{ success: boolean; archivedCount: number; error?: string }> {
+    async archiveEvaluationResults(startDate: Date, endDate: Date, semester: "1st" | "2nd" = "1st"): Promise<{ success: boolean; archivedCount: number; error?: string }> {
         try {
             // Get all current evaluation results
             const evaluationsSnapshot = await getDocs(collection(db, "evaluation_results"))
@@ -108,6 +110,7 @@ export const evaluationHistoryService = {
                 year: startDate.getFullYear(),
                 startDate: Timestamp.fromDate(startDate),
                 endDate: Timestamp.fromDate(endDate),
+                semester,
                 archivedAt: Timestamp.now(),
                 professorEvaluations
             }
@@ -156,6 +159,7 @@ export const evaluationHistoryService = {
                     departmentName: string
                     evaluationCount: number
                 }>
+                semester: string | null
             }>()
 
             querySnapshot.docs.forEach((docSnapshot) => {
@@ -180,6 +184,7 @@ export const evaluationHistoryService = {
                         id: docSnapshot.id,
                         startDate: data.startDate?.toDate?.() || new Date(),
                         endDate: data.endDate?.toDate?.() || new Date(),
+                        semester: data.semester || "1st",
                         archivedAt: data.archivedAt?.toDate?.() || new Date(),
                         professorCount: professorEvaluations.length,
                         totalEvaluations
@@ -211,7 +216,8 @@ export const evaluationHistoryService = {
                             startDate,
                             endDate,
                             historyCreatedAt,
-                            professors: new Map()
+                            professors: new Map(),
+                            semester: data.semester || null
                         })
                     }
 
@@ -249,6 +255,7 @@ export const evaluationHistoryService = {
                     id: `flat_${periodKey}`,
                     startDate: periodData.startDate,
                     endDate: periodData.endDate,
+                    semester: (periodData.semester as "1st" | "2nd") || "1st",
                     archivedAt: periodData.historyCreatedAt,
                     professorCount: professorsArray.length,
                     totalEvaluations
@@ -366,6 +373,7 @@ export const evaluationHistoryService = {
                     year: startDate.getFullYear(),
                     startDate,
                     endDate,
+                    semester: (matchingDocs[0].data().semester as "1st" | "2nd") || "1st",
                     archivedAt,
                     professorEvaluations
                 }
@@ -385,6 +393,7 @@ export const evaluationHistoryService = {
                 year: data.year || new Date().getFullYear(),
                 startDate: data.startDate?.toDate?.() || new Date(),
                 endDate: data.endDate?.toDate?.() || new Date(),
+                semester: data.semester || "1st",
                 archivedAt: data.archivedAt?.toDate?.() || new Date(),
                 professorEvaluations: (data.professorEvaluations || []).map((prof: any) => ({
                     professorId: prof.professorId || "",

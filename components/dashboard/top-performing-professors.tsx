@@ -285,7 +285,7 @@ export function TopPerformingProfessors() {
     // Main Title
     doc.setFontSize(16)
     doc.setFont("helvetica", "bold")
-    doc.text(`All Professors Performance by Category`, 14, 18)
+    doc.text(`All Professors Performance by ${sortBy === "department" ? "Department" : "Category"}`, 14, 18)
     doc.setFontSize(10)
     doc.setFont("helvetica", "normal")
     doc.setTextColor(120, 120, 120)
@@ -487,7 +487,7 @@ export function TopPerformingProfessors() {
       isFirstCategory = false
     })
 
-    doc.save(`all_professors_performance_by_category_${new Date().toISOString().split('T')[0]}.pdf`)
+    doc.save(`all_professors_performance_by_${sortBy === "department" ? "department" : "category"}_${new Date().toISOString().split('T')[0]}.pdf`)
   }
 
   // Get total count of all professors across all categories
@@ -543,10 +543,10 @@ export function TopPerformingProfessors() {
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <TrendingUp className="h-5 w-5   text-primary" />
-                      All Professors Performance by Category
+                      All Professors Performance by {sortBy === "department" ? "Department" : "Category"}
                     </DialogTitle>
                     <DialogDescription>
-                      Complete performance rankings for all professors by category
+                      Complete performance rankings for all professors by {sortBy === "department" ? "department" : "category"}
                     </DialogDescription>
                   </DialogHeader>
 
@@ -889,11 +889,11 @@ export function TopPerformingProfessors() {
               <p className="font-medium">Performance Calculation:</p>
               <p className="break-words">Based on the weighted Average Score (1.00 - 5.00) from student evaluations per category.</p>
               <div className="flex flex-wrap gap-3 mt-2">
-                <span className="text-chart-5 font-medium whitespace-nowrap">● Excellent (4.50 - 5.00)</span>
-                <span className="text-primary font-medium whitespace-nowrap">● Very Satisfactory (3.50 - 4.49)</span>
-                <span className="text-chart-3 font-medium whitespace-nowrap">● Satisfactory (2.50 - 3.49)</span>
-                <span className="text-orange-600 font-medium whitespace-nowrap">● Fair (1.50 - 2.49)</span>
                 <span className="text-destructive font-medium whitespace-nowrap">● Poor (&lt; 1.50)</span>
+                <span className="text-orange-600 font-medium whitespace-nowrap">● Fair (1.50 - 2.49)</span>
+                <span className="text-chart-3 font-medium whitespace-nowrap">● Satisfactory (2.50 - 3.49)</span>
+                <span className="text-primary font-medium whitespace-nowrap">● Very Satisfactory (3.50 - 4.49)</span>
+                <span className="text-chart-5 font-medium whitespace-nowrap">● Excellent (4.50 - 5.00)</span>
               </div>
               <p className="text-xs italic mt-2 break-words">E = Excellent, VS = Very Satisfactory</p>
             </div>
