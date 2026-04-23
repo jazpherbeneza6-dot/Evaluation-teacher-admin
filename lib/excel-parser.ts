@@ -130,10 +130,10 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
     let sectionColumns = sheet.headers.filter(header => {
       const headerText = header.toString()
       const lowerHeader = headerText.toLowerCase()
-      
+
       // Match exact section headers with percentages OR Comments
       const isCommentSection = lowerHeader.includes('comment')
-      
+
       // Standardize section detection: handle both "and" and "&", case-insensitive
       const isStandardSection = (
         lowerHeader.includes('instructional competence') ||
@@ -142,7 +142,7 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
         (lowerHeader.includes('student support') && (lowerHeader.includes('and') || lowerHeader.includes('&')) && lowerHeader.includes('development')) ||
         lowerHeader.includes('research')
       ) && lowerHeader.includes('%')
-      
+
       return isStandardSection || isCommentSection
     })
 
@@ -494,7 +494,7 @@ export function convertToDatabaseFormat(questions: ParsedQuestion[], professors:
       questionText: question.questionText,
       questionType: "Likert Scale",
       isActive: true,
-      options: ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"], // Default options
+      options: ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"], // Default options
       section: question.section,
       weight: question.weight,
     }

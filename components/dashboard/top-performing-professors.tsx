@@ -37,7 +37,7 @@ import {
 import { Trophy, Award, Star, TrendingUp, MoreHorizontal, Search, ArrowUpDown, FileDown } from "lucide-react"
 import jsPDF from "jspdf"
 import { evaluationResultsService, type TopProfessorData } from "@/lib/evaluation-results-service"
-import { evaluationQuestionService } from "@/lib/database"
+import { evaluationQuestionService, evaluationDeadlineService } from "@/lib/database"
 import type { EvaluationResult, EvaluationQuestion } from "@/lib/types"
 
 export function TopPerformingProfessors() {
@@ -49,6 +49,7 @@ export function TopPerformingProfessors() {
   const [isViewAllOpen, setIsViewAllOpen] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [activeSemester, setActiveSemester] = useState<string>("")
   const [sortBy, setSortBy] = useState<"score" | "name" | "department">("score")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
 
@@ -70,13 +71,18 @@ export function TopPerformingProfessors() {
     // Fetch initial data immediately for faster loading
     const loadInitialData = async () => {
       try {
-        // Fetch questions and results in parallel
-        const [results, questionsData] = await Promise.all([
+        // Fetch questions, results and active deadline in parallel
+        const [results, questionsData, activeDeadline] = await Promise.all([
           evaluationResultsService.getAll(),
           evaluationQuestionService.getActiveQuestions(),
+          evaluationDeadlineService.getActive()
         ])
 
         if (!isMounted) return
+
+        if (activeDeadline) {
+          setActiveSemester(activeDeadline.semester)
+        }
 
         // Calculate top 3 per category
         const topByCat = evaluationResultsService.calculateTopPerformingProfessorsByCategory(results, questionsData, 3)
@@ -527,7 +533,12 @@ export function TopPerformingProfessors() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
-                Top 3 Performing Professors by Category
+                <span>Top 3 Performing Professors by Category</span>
+                {activeSemester && (
+                  <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 font-semibold">
+                    {activeSemester === "1st" ? "1st Sem" : "2nd Sem"}
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription>Top 3 professors per category based on Excellent and Very Satisfactory responses from student evaluations</CardDescription>
             </div>
@@ -542,8 +553,13 @@ export function TopPerformingProfessors() {
                 <DialogContent style={{ width: 'calc(100vw - 40px)', maxWidth: 'calc(100vw - 40px)' }} className="max-h-[90vh] flex flex-col">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5   text-primary" />
-                      All Professors Performance by {sortBy === "department" ? "Department" : "Category"}
+                      <TrendingUp className="h-5 w-5 text-primary" />
+                      <span>All Professors Performance by {sortBy === "department" ? "Department" : "Category"}</span>
+                      {activeSemester && (
+                        <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary border-primary/20 animate-in fade-in zoom-in duration-300">
+                          {activeSemester === "1st" ? "1st Semester" : "2nd Semester"}
+                        </Badge>
+                      )}
                     </DialogTitle>
                     <DialogDescription>
                       Complete performance rankings for all professors by {sortBy === "department" ? "department" : "category"}

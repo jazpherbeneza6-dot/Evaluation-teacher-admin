@@ -387,7 +387,8 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                     const qid = response.questionId
                     if (!aggregates[qid]) {
                         let baseOptions = Array.isArray(response.options) ? response.options : []
-                        if ((!baseOptions || baseOptions.length === 0) && response.questionType === "Likert Scale") {
+                        // Force standard order for Likert Scale to ensure consistency even with existing data
+                        if (String(response.questionType).toLowerCase() === "likert scale") {
                             baseOptions = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
                         }
                         const initialCounts: Record<string, number> = {}
@@ -408,6 +409,24 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                         if (response.answer && String(response.answer).trim()) {
                             aggregates[qid].textResponses!.push(String(response.answer))
                         }
+                    } else if (String(response.questionType).toLowerCase() === "likert scale") {
+                        let answerKey = String(response.answer)
+                        const answerIndex = parseInt(answerKey, 10)
+
+                        // If answer is an index, resolve it using the original options
+                        if (!isNaN(answerIndex) && Array.isArray(response.options) && response.options[answerIndex]) {
+                            answerKey = response.options[answerIndex]
+                        }
+
+                        // Normalize to match our standard baseOptions labels
+                        const normalized = answerKey.toLowerCase()
+                        if (normalized === "excellent") answerKey = "Excellent"
+                        else if (normalized.includes("very satisfactory") || normalized === "verysatisfactory") answerKey = "Very Satisfactory"
+                        else if (normalized === "satisfactory") answerKey = "Satisfactory"
+                        else if (normalized === "fair") answerKey = "Fair"
+                        else if (normalized === "poor") answerKey = "Poor"
+
+                        aggregates[qid].counts[answerKey] = (aggregates[qid].counts[answerKey] || 0) + 1
                     } else {
                         const answerKey = String(response.answer)
                         aggregates[qid].counts[answerKey] = (aggregates[qid].counts[answerKey] || 0) + 1
@@ -614,19 +633,27 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
 
             secQuestions.forEach(q => {
                 if (q.questionType !== "text") {
-                    const opts = q.options || ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+                    const opts = q.options || ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
                     let weightedScore = 0
                     let count = 0
 
                     opts.forEach((opt, oi) => {
                         const val = q.counts[opt] || 0
-                        let score = 0
                         const label = opt.toLowerCase()
-                        if (label === "strongly agree" || oi === 0) score = 5
-                        else if (label === "agree" || oi === 1) score = 4
-                        else if (label === "neutral" || label === "neither agree nor disagree") score = 3
-                        else if (label === "disagree" || (oi === 2 && opts.length === 4) || (oi === 3 && opts.length === 5)) score = 2
-                        else if (label === "strongly disagree" || (oi === 3 && opts.length === 4) || (oi === 4 && opts.length === 5)) score = 1
+                        let score = 0
+                        if (label.includes("excellent") || label.includes("strongly agree") || label === "5") score = 5
+                        else if (label.includes("very satisfactory") || label.includes("verysatisfactory") || label.includes("agree") || label === "4") score = 4
+                        else if (label.includes("satisfactory") || label.includes("neutral") || label === "3") score = 3
+                        else if (label.includes("fair") || label.includes("disagree") || label === "2") score = 2
+                        else if (label.includes("poor") || label.includes("strongly disagree") || label === "1") score = 1
+                        else if (score === 0) {
+                            const firstOpt = opts[0].toLowerCase()
+                            if (firstOpt.includes("excellent") || firstOpt.includes("strongly agree")) {
+                                score = [5, 4, 3, 2, 1][oi] || 0
+                            } else {
+                                score = [1, 2, 3, 4, 5][oi] || 0
+                            }
+                        }
 
                         weightedScore += val * score
                         count += val
@@ -1253,7 +1280,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                     </div>
                                     <div>
                                         <CardTitle className="text-xl font-bold text-gray-900">Evaluation Library</CardTitle>
-                                        <CardDescription>Select a year to view archived evaluations</CardDescription>
+                                        <CardDescription>Select a year to view back up data of evaluation</CardDescription>
                                     </div>
                                 </div>
                                 <div className="relative w-full sm:w-64">
@@ -1301,7 +1328,7 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
                                     <Calendar className="h-5 w-5 text-blue-600" />
                                 </div>
                                 <div>
-                                    <CardTitle className="text-xl font-bold text-gray-900">BACK UP FILES for {selectedYear}</CardTitle>
+                                    <CardTitle className="text-xl font-bold text-gray-900">Back up data for {selectedYear}</CardTitle>
                                     <CardDescription>Choose how you want to browse the backed up data</CardDescription>
                                 </div>
                             </div>

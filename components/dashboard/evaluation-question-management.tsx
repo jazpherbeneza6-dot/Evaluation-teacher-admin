@@ -98,7 +98,7 @@ interface EvaluationQuestionManagementProps {
 // STEP 4: Main component function - dito nagsisimula ang lahat
 export function EvaluationQuestionManagement({ questions, professors, onRefresh }: EvaluationQuestionManagementProps) {
   const { toast } = useToast() // Toast notification para sa messages
-  
+
   // State for question password
   const [currentQuestionPassword, setCurrentQuestionPassword] = useState("LCCADMIN")
 
@@ -143,7 +143,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
   const [questionType, setQuestionType] = useState<"Likert Scale" | "text">("text") // Tipo ng tanong
   const [options, setOptions] = useState<string[]>([""]) // Mga choices
   const [isSaving, setIsSaving] = useState(false) // Kung nagse-save pa ba
-  
+
   // New state for card-based view
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
 
@@ -183,7 +183,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
 
     if (questionType === "Likert Scale") {
       // Kung Likert Scale, i-set ang mga standard options
-      setOptions(["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"])
+      setOptions(["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"])
     } else {
       // Kung text type, i-set ang empty options
       setOptions([""])
@@ -304,23 +304,23 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
     ]
 
     const sorted = new Map<string, EvaluationQuestion[]>()
-    
+
     // Sort sections using predefined order with fuzzy matching
     sectionOrder.forEach((orderSection) => {
       // Find matches in the actual sections map
       sections.forEach((questions, actualSection) => {
         if (sorted.has(actualSection)) return
-        
+
         // Improve normalization: handle '&' vs 'and', casing, and prefixes
         const normalize = (s: string) => s.toLowerCase()
           .replace(/^[a-f]\.\s*/, '') // Remove prefixes like "A. "
           .replace(/&/g, 'and')       // Replace & with and
           .replace(/\s+/g, ' ')       // Normalize spaces
           .trim()
-        
+
         const normalizedActual = normalize(actualSection)
         const normalizedOrder = normalize(orderSection)
-        
+
         if (actualSection === orderSection || normalizedActual === normalizedOrder) {
           sorted.set(actualSection, questions)
         }
@@ -419,7 +419,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         isActive: true,
       }
       if (qt === "Likert Scale") {
-        questionData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+        questionData.options = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
       }
 
       await evaluationQuestionService.create(questionData)
@@ -483,7 +483,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
         isActive: true,
       }
       if (qt === "Likert Scale") {
-        questionData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+        questionData.options = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
       }
 
       await evaluationQuestionService.create(questionData)
@@ -528,7 +528,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
           isActive: true,
         }
         if (questionType === "Likert Scale") {
-          updatedData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+          updatedData.options = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
         }
         return evaluationQuestionService.update(q.id, updatedData);
       }))
@@ -805,7 +805,7 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
 
             // Only add options for Likert Scale questions
             if (!isCommentsSection) {
-              questionData.options = ["Excellent", "Very Satisfactory", "Satisfactory", "Fair", "Poor"]
+              questionData.options = ["Poor", "Fair", "Satisfactory", "Very Satisfactory", "Excellent"]
             }
 
             await evaluationQuestionService.create(questionData)
@@ -1111,16 +1111,16 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
             // STEP: Card-based category selection
             if (!selectedCategory) {
               const sections = Array.from(questionsBySection.keys())
-              
+
               return (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
                   {sections.map((section) => {
                     const theme = getCategoryTheme(section)
                     const label = getSectionDisplayName(section).replace(/^[A-F]\.\s+/, '')
                     const qCount = questionsBySection.get(section)?.length || 0
-                    
+
                     return (
-                      <Card 
+                      <Card
                         key={section}
                         className={`group relative overflow-hidden border cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.03] bg-gradient-to-br ${theme.color} ${theme.border}`}
                         onClick={() => {
@@ -1159,8 +1159,8 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
               selectedSection === "all"
                 ? Array.from(questionsBySection.entries())
                 : questionsBySection.has(selectedSection)
-                ? [[selectedSection, questionsBySection.get(selectedSection)!]] as [string, EvaluationQuestion[]][]
-                : []
+                  ? [[selectedSection, questionsBySection.get(selectedSection)!]] as [string, EvaluationQuestion[]][]
+                  : []
 
             // Apply search filter if needed
             const displaySections = searchQuery.trim()
@@ -1223,13 +1223,13 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
               // Helper function to get section priority for sorting
               const getSectionPriority = (section: string): number => {
                 const normalized = section || 'Other'
-                
+
                 const normalize = (s: string) => s.toLowerCase()
                   .replace(/^[a-f]\.\s*/, '')
                   .replace(/&/g, 'and')
                   .replace(/\s+/g, ' ')
                   .trim()
-                
+
                 const normalizedValue = normalize(normalized)
 
                 // Check for exact match first
@@ -1258,9 +1258,9 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
               return (
                 <div className="space-y-6 sm:space-y-8">
                   <div className="flex items-center gap-4 mb-2">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => {
                         setSelectedCategory(null)
                         setSelectedSection("all")
@@ -1348,18 +1348,18 @@ export function EvaluationQuestionManagement({ questions, professors, onRefresh 
             return (
               <div className="space-y-6 sm:space-y-8">
                 <div className="flex items-center gap-4 mb-2">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => {
-                        setSelectedCategory(null)
-                        setSelectedSection("all")
-                      }}
-                      className="gap-2 text-primary font-semibold hover:bg-primary/10"
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                      Back to Categories
-                    </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCategory(null)
+                      setSelectedSection("all")
+                    }}
+                    className="gap-2 text-primary font-semibold hover:bg-primary/10"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to Categories
+                  </Button>
                 </div>
                 {displaySections.map(([section, sectionQuestions]) => (
                   <div key={section} className="space-y-3 sm:space-y-4">
