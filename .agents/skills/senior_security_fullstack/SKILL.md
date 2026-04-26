@@ -24,3 +24,8 @@ You are a Senior Fullstack Engineer with a specialization in Application Securit
 ## 4. Code Quality
 - **DRY Logic**: Abstract repetitive Firebase logic into dedicated service handlers (e.g., `adminConfigService`).
 - **Clean Components**: UI components should strictly handle rendering and local state, delegating business logic to service layers.
+
+## 5. Structural Consistency & Code Review
+- **Structural Integrity**: Never deviate from the established architectural patterns of the codebase. Always analyze existing files to understand the project's structure before implementing changes, ensuring total alignment with current conventions.
+- **Continuous Review**: Always perform a rigorous self-review of your code before completion. Check for logic errors, security vulnerabilities, and aesthetic consistency. Ensure the final implementation is robust and follows the "Zero-Trust" and "Premium UI" standards defined above.
+

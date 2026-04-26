@@ -990,24 +990,30 @@ export function EvaluationResultsManagement({ questions, professors }: Evaluatio
                     doc.text("Professor Evaluation Results", 20, 22)
 
                     // Evaluation Period on the right (aligned with professor name)
+                    let periodText = ""
+                    let periodWidth = 0
                     if (activeDeadline) {
                       const startDate = new Date(activeDeadline.startDate)
                       const endDate = new Date(activeDeadline.endDate)
                       const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
-                      const periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}`
+                      const semesterLabel = activeDeadline.semester ? (activeDeadline.semester === "1st" ? "1st Semester" : "2nd Semester") : ""
+                      periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}${semesterLabel ? ` | ${semesterLabel}` : ""}`
 
                       doc.setFontSize(10)
                       doc.setFont("helvetica", "normal")
                       doc.setTextColor(110, 120, 135)
-                      const textWidth = doc.getTextWidth(periodText)
-                      doc.text(periodText, pageWidth - textWidth - 20, 30)
+                      periodWidth = doc.getTextWidth(periodText)
+                      doc.text(periodText, pageWidth - periodWidth - 20, 30)
                     }
 
                     doc.setFontSize(12)
                     doc.setFont("helvetica", "bold")
                     doc.setTextColor(100, 110, 130)
                     const profDisplay = profName.toUpperCase() + (professor?.departmentName ? ` | ${professor.departmentName.toUpperCase()}` : "")
-                    doc.text(profDisplay, 20, 30)
+                    // Truncate professor display to prevent overlap with period text
+                    const availableWidth = pageWidth - periodWidth - 45 // 45 units for margins and gap
+                    const truncatedProf = truncateText(profDisplay, availableWidth)
+                    doc.text(truncatedProf, 20, 30)
 
                     // Group aggregates by section
                     const grouped: Record<string, QuestionAggregate[]> = {}

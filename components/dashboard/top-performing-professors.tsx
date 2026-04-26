@@ -295,7 +295,9 @@ export function TopPerformingProfessors() {
     doc.setFontSize(10)
     doc.setFont("helvetica", "normal")
     doc.setTextColor(120, 120, 120)
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26)
+    const semesterLabel = activeSemester ? (activeSemester === "1st" ? "1st Semester" : "2nd Semester") : ""
+    const subtitle = `Generated: ${new Date().toLocaleDateString()}${semesterLabel ? ` | ${semesterLabel}` : ""}`
+    doc.text(subtitle, 14, 26)
 
     const colX_grouped = [14, 30, 190, 240]
     const colWidths_grouped = [14, 150, 48, 40]

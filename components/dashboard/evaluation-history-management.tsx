@@ -542,26 +542,32 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         doc.setFontSize(18)
         doc.setFont("helvetica", "bold")
         doc.setTextColor(30, 41, 59)
-        doc.text("Professor Evaluation Results (Archived)", 20, 22)
+        doc.text("Professor Evaluation Results", 20, 22)
 
-        // Evaluation Period on the right
+        // Evaluation Period on the right (aligned with professor name)
+        let periodText = ""
+        let periodWidth = 0
         if (period) {
             const startDate = new Date(period.startDate)
             const endDate = new Date(period.endDate)
             const dateOptions: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
-            const periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}`
+            const semesterLabel = period.semester ? (period.semester === "1st" ? "1st Semester" : "2nd Semester") : ""
+            periodText = `Period: ${startDate.toLocaleDateString('en-US', dateOptions)} - ${endDate.toLocaleDateString('en-US', dateOptions)}${semesterLabel ? ` | ${semesterLabel}` : ""}`
 
             doc.setFontSize(10)
             doc.setTextColor(100, 116, 139)
-            const textWidth = doc.getTextWidth(periodText)
-            doc.text(periodText, pageWidth - textWidth - 20, 30)
+            periodWidth = doc.getTextWidth(periodText)
+            doc.text(periodText, pageWidth - periodWidth - 20, 30)
         }
 
         doc.setFontSize(12)
         doc.setFont("helvetica", "bold")
         doc.setTextColor(100, 116, 139)
         const profDisplay = profName.toUpperCase() + (deptName ? ` | ${deptName.toUpperCase()}` : "")
-        doc.text(profDisplay, 20, 30)
+        // Truncate professor display to prevent overlap with period text
+        const availableWidth = pageWidth - periodWidth - 45 // 45 units for margins and gap
+        const truncatedProf = truncateText(profDisplay, availableWidth)
+        doc.text(truncatedProf, 20, 30)
 
         // Group aggregates by section
         const grouped: Record<string, QuestionAggregate[]> = {}
@@ -909,11 +915,12 @@ export function EvaluationHistoryManagement({ questions, professors }: Evaluatio
         // Main Title
         doc.setFontSize(16)
         doc.setFont("helvetica", "bold")
-        doc.text(`All Professors Performance Rankings (Archived)`, 14, 18)
+        doc.text(`All Professors Performance Rankings`, 14, 18)
         doc.setFontSize(10)
         doc.setFont("helvetica", "normal")
         doc.setTextColor(120, 120, 120)
-        doc.text(`Period: ${formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}`, 14, 26)
+        const semesterLabel = selectedPeriod.semester ? (selectedPeriod.semester === "1st" ? "1st Semester" : "2nd Semester") : ""
+        doc.text(`Period: ${formatDateRange(selectedPeriod.startDate, selectedPeriod.endDate)}${semesterLabel ? ` | ${semesterLabel}` : ""}`, 14, 26)
         doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 32)
 
         const cats = performanceCategories.map(cat => ({ key: cat, label: cat }))
