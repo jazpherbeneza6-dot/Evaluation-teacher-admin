@@ -53,7 +53,6 @@ export const evaluationHistoryService = {
             const evaluationsSnapshot = await getDocs(collection(db, "evaluation_results"))
 
             if (evaluationsSnapshot.empty) {
-                console.log("No evaluations to archive")
                 return { success: true, archivedCount: 0 }
             }
 
@@ -125,7 +124,6 @@ export const evaluationHistoryService = {
             await Promise.all(deletePromises)
 
             const totalArchived = evaluationsSnapshot.docs.length
-            console.log(`Successfully archived ${totalArchived} evaluations to history`)
 
             return { success: true, archivedCount: totalArchived }
         } catch (error) {

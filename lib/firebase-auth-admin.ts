@@ -37,7 +37,6 @@ function getAdminApp() {
           credential: cert(serviceAccount),
           projectId: projectId
         })
-        console.log('Firebase Admin initialized with service account key')
         return adminApp
       } catch (parseError) {
         console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', parseError)
@@ -58,7 +57,6 @@ function getAdminApp() {
             privateKey: privateKey
           })
         })
-        console.log('Firebase Admin initialized with individual credentials')
         return adminApp
       } catch (certError) {
         console.error('Failed to initialize with individual credentials:', certError)
@@ -72,7 +70,6 @@ function getAdminApp() {
         adminApp = initializeApp({
           projectId: projectId
         })
-        console.log('Firebase Admin initialized with default credentials')
         return adminApp
       } catch (defaultError) {
         console.error('Failed to initialize with default credentials:', defaultError)
@@ -102,7 +99,6 @@ export async function deleteUserFromAuth(email: string): Promise<boolean> {
     // Delete the user
     await auth.deleteUser(userRecord.uid)
     
-    console.log(`Successfully deleted user: ${email}`)
     return true
   } catch (error: any) {
     if (error.code === 'auth/user-not-found') {
@@ -180,12 +176,10 @@ export async function updateUserPassword(email: string, newPassword: string): Pr
         // Note: Admin SDK password updates don't trigger email notifications
       })
       
-      console.log(`Successfully updated password for user: ${email}`)
       return true
     } catch (getUserError: any) {
       // If user not found, create a new user
       if (getUserError.code === 'auth/user-not-found') {
-        console.log(`User not found in Firebase Auth, creating new user: ${email}`)
         try {
           // Create user with emailVerified: true to prevent verification email
           // Since user already exists in Firestore, we trust the email
@@ -195,19 +189,16 @@ export async function updateUserPassword(email: string, newPassword: string): Pr
             emailVerified: true, // Set to true to prevent verification email
             disabled: false
           })
-          console.log(`Successfully created user with password: ${email} (UID: ${newUser.uid})`)
           return true
         } catch (createError: any) {
           // Handle specific creation errors
           if (createError.code === 'auth/email-already-exists') {
             // User might have been created between check and create - try to update
-            console.log(`Email already exists, attempting to update password: ${email}`)
             try {
               const existingUser = await auth.getUserByEmail(email)
               await auth.updateUser(existingUser.uid, {
                 password: newPassword
               })
-              console.log(`Successfully updated password for existing user: ${email}`)
               return true
             } catch (updateError: any) {
               console.error('Error updating password for existing user:', updateError)

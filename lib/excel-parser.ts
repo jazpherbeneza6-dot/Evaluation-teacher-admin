@@ -123,7 +123,6 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
 
   // Process each sheet
   excelData.sheets.forEach((sheet) => {
-    console.log(`Processing sheet: ${sheet.sheetName}`)
 
     // Look for section columns (columns that contain section names with percentages)
     // We specifically look for the 5 evaluation sections
@@ -146,7 +145,6 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
       return isStandardSection || isCommentSection
     })
 
-    console.log(`Section columns found (exact match):`, sectionColumns)
 
     // If no section columns found with exact match, try to detect by percentage patterns
     if (sectionColumns.length === 0) {
@@ -155,7 +153,6 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
         return headerText.includes('%') && (headerText.includes('(') && headerText.includes(')'))
       })
       sectionColumns.push(...percentageColumns)
-      console.log(`Found columns with percentage pattern:`, sectionColumns)
     }
 
     // If still no section columns, try with more lenient matching
@@ -179,13 +176,11 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
         return isStandardSection || isCommentSection
       })
       sectionColumns.push(...lenientColumns)
-      console.log(`Found columns with lenient matching:`, sectionColumns)
     }
 
     // AGGRESSIVE MODE: If still no section columns found, read ALL columns that have data
     // This ensures we don't miss any questions even if section headers don't match
     if (sectionColumns.length === 0) {
-      console.log(`⚠️ No section columns detected. Reading ALL columns with data...`)
       // Get all columns that have at least one non-empty cell
       const allColumnsWithData = sheet.headers.filter(header => {
         // Check if this column has any non-empty data
@@ -198,10 +193,8 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
         return hasData
       })
       sectionColumns = allColumnsWithData
-      console.log(`📖 Reading ${sectionColumns.length} columns with data:`, sectionColumns)
     }
 
-    console.log(`Final columns to process: ${sectionColumns.length} columns`)
 
     // Process each section column
     sectionColumns.forEach(columnName => {
@@ -228,7 +221,6 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
         }
       }
 
-      console.log(`Processing column: "${sectionName}" with weight: ${sectionWeight}`)
 
       // Process each row in this column
       sheet.data.forEach((row, rowIndex) => {
@@ -282,7 +274,6 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
 
           // Skip only if it's a header or Likert scale options
           if (isHeader || isLikertScale) {
-            console.log(`Row ${rowIndex + 2}: Skipping - ${isHeader ? 'header' : 'Likert scale'}: "${questionText}"`)
             return
           }
 
@@ -307,9 +298,7 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
             }
 
             questions.push(question)
-            console.log(`Row ${rowIndex + 2}: Added question ${questionNumber} (${sectionName}): "${completeQuestionText.substring(0, 80)}${completeQuestionText.length > 80 ? '...' : ''}"`)
           } else {
-            console.log(`Row ${rowIndex + 2}: Skipping - too short (${completeQuestionText.length} chars): "${questionText}"`)
           }
         }
       })
@@ -337,52 +326,11 @@ export function parseQuestionsFromExcel(excelData: ExcelParseResult): ExcelQuest
   })
 
   // Add some debugging information
-  console.log('Excel Parse Debug Info:')
-  console.log('- Total sheets processed:', excelData.totalSheets)
-  console.log('- Total rows processed:', excelData.totalRows)
-  console.log('- Questions found:', questions.length)
-  console.log('- Sections found:', sections.length)
-  console.log('- Sections detected:', sections.map(s => s.name))
 
   // Add detailed per-section summary
-  sections.forEach(section => {
-    console.log(`\n📋 Section: ${section.name} (${section.weight})`)
-    console.log(`   Questions found: ${section.questions.length}`)
-    section.questions.forEach((q, idx) => {
-      console.log(`   ${idx + 1}. Row ${q.rowIndex}: ${q.questionText.substring(0, 80)}${q.questionText.length > 80 ? '...' : ''}`)
-    })
-  })
 
   // Log total count for verification
-  console.log(`\n✅ TOTAL QUESTIONS PARSED: ${questions.length}`)
-  console.log(`📊 Breakdown by section:`)
-  sections.forEach(section => {
-    console.log(`   - ${section.name}: ${section.questions.length} questions`)
-  })
 
-  if (questions.length === 0) {
-    console.log('No questions found. Sample data from Excel:')
-    excelData.sheets.forEach(sheet => {
-      console.log(`Sheet: ${sheet.sheetName}`)
-      console.log('Headers:', sheet.headers)
-      if (sheet.data.length > 0) {
-        console.log('First few rows:', sheet.data.slice(0, 3))
-      }
-    })
-  } else {
-    console.log('Sample questions found:')
-    questions.slice(0, 5).forEach((question, index) => {
-      console.log(`${index + 1}: "${question.questionText.substring(0, 50)}..." (Section: ${question.section}, Sheet: ${question.sheetName})`)
-    })
-
-    console.log('Questions by section:')
-    sections.forEach(section => {
-      console.log(`- ${section.name} (${section.weight}): ${section.questions.length} questions`)
-      section.questions.slice(0, 3).forEach((q, i) => {
-        console.log(`  ${i + 1}. ${q.questionText.substring(0, 50)}...`)
-      })
-    })
-  }
 
   return {
     questions,
@@ -456,11 +404,9 @@ export function validateParsedQuestions(questions: ParsedQuestion[]): {
       valid.push(question)
     } else {
       invalid.push(question)
-      console.log(`Invalid question filtered out: "${question.questionText}"`)
     }
   }
 
-  console.log(`Validation complete: ${valid.length} valid questions, ${invalid.length} invalid questions`)
   return { valid, invalid }
 }
 
@@ -508,25 +454,12 @@ export async function parseExcelQuestions(file: File): Promise<ExcelQuestionPars
     const excelData = await readExcelFile(file)
 
     // Log extracted data for debugging
-    console.log('=== EXCEL EXTRACTION DEBUG ===')
-    console.log('Total sheets:', excelData.totalSheets)
-    console.log('Total rows:', excelData.totalRows)
 
-    excelData.sheets.forEach(sheet => {
-      console.log(`Sheet "${sheet.sheetName}":`)
-      console.log('- Headers:', sheet.headers)
-      console.log('- Data rows:', sheet.data.length)
-      if (sheet.data.length > 0) {
-        console.log('- Sample row:', sheet.data[0])
-      }
-    })
 
     // Check for question-related headers
     const allHeaders = excelData.sheets.flatMap(sheet => sheet.headers)
     const uniqueHeaders = [...new Set(allHeaders)]
 
-    console.log('=== HEADER ANALYSIS ===')
-    console.log('All headers found:', uniqueHeaders)
 
     const questionHeaders = uniqueHeaders.filter(header =>
       header.toLowerCase().includes('question') ||
@@ -534,7 +467,6 @@ export async function parseExcelQuestions(file: File): Promise<ExcelQuestionPars
       header.toLowerCase().includes('criteria')
     )
 
-    console.log('Potential question headers:', questionHeaders)
 
     // Parse questions from Excel data
     const result = parseQuestionsFromExcel(excelData)
@@ -567,7 +499,6 @@ export function debugParseExcel(excelData: ExcelParseResult): ExcelQuestionParse
 
 
   if (result.questions.length > 0) {
-    console.log('Sample question:', result.questions[0])
   }
 
   return result
@@ -634,7 +565,6 @@ export function parseStudentsFromExcel(excelData: ExcelParseResult): ExcelStuden
 
   // Process each sheet
   excelData.sheets.forEach((sheet) => {
-    console.log(`Processing sheet: ${sheet.sheetName} for students`)
 
     // Find column indices by header name (case-insensitive)
     const findColumnIndex = (headerName: string): number => {
@@ -732,7 +662,6 @@ export function parseStudentsFromExcel(excelData: ExcelParseResult): ExcelStuden
     })
   })
 
-  console.log(`Parsed ${students.length} students from Excel`)
   if (errors.length > 0) {
     console.warn(`Found ${errors.length} errors during parsing:`, errors)
   }
@@ -795,7 +724,6 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
 
   // Process each sheet
   excelData.sheets.forEach((sheet) => {
-    console.log(`Processing sheet: ${sheet.sheetName} for professors`)
 
     // Find column indices by header name (case-insensitive)
     const findColumnIndex = (headerName: string): number => {
@@ -819,7 +747,6 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
         header?.toString().toLowerCase().trim().includes('course')
       )
     }
-    console.log('Course Handle column index:', courseCol, '| Headers:', sheet.headers)
     const emailCol = findColumnIndex('GMAIL')
     const passwordCol = findColumnIndex('PASSWORD')
 
@@ -869,7 +796,6 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
         const rawSubject = subjectCol !== -1 ? (row[sheet.headers[subjectCol]]?.toString() || '') : ''
         const rawSection = sectionCol !== -1 ? (row[sheet.headers[sectionCol]]?.toString() || '') : ''
         const rawCourse = courseCol !== -1 ? (row[sheet.headers[courseCol]]?.toString() || '') : ''
-        console.log(`Row ${rowIndex + 2}: rawCourse='${rawCourse}', courseCol=${courseCol}, header='${courseCol !== -1 ? sheet.headers[courseCol] : 'N/A'}'`)
 
         // Parse numbered items with format: "1. Item1" or "2. Item2"
         // Items are separated by line breaks
@@ -902,7 +828,6 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
         const sectionMap = parseNumberedItems(rawSection)
         const courseMap = parseNumberedItems(rawCourse)
 
-        console.log(`Row ${rowIndex + 2}: courseMap entries:`, Array.from(courseMap.entries()))
 
         // Create subject-section-course triplets
         const subjectSections: SubjectSection[] = []
@@ -955,7 +880,6 @@ export function parseProfessorsFromExcel(excelData: ExcelParseResult): ExcelProf
     })
   })
 
-  console.log(`Parsed ${professors.length} professors from Excel`)
   if (errors.length > 0) {
     console.warn(`Found ${errors.length} errors during parsing:`, errors)
   }

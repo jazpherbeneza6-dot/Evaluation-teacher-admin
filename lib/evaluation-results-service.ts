@@ -105,20 +105,6 @@ export const evaluationResultsService = {
         } as EvaluationResult
       })
 
-      console.log(`✅ Loaded ${results.length} evaluation results from evaluation_results collection`)
-      if (results.length > 0) {
-        const sampleResult = results[0]
-        console.log(`📊 Sample result:`, {
-          professorName: sampleResult.professorName,
-          responsesCount: sampleResult.responses?.length || 0,
-          firstResponse: sampleResult.responses?.[0] ? {
-            answer: sampleResult.responses[0].answer,
-            answerType: typeof sampleResult.responses[0].answer,
-            options: sampleResult.responses[0].options,
-            questionType: sampleResult.responses[0].questionType
-          } : null
-        })
-      }
 
       return results
     } catch (error) {
@@ -128,11 +114,9 @@ export const evaluationResultsService = {
         code: (error as any)?.code,
         name: (error as any)?.name
       })
-      console.log("🔄 Trying fallback query...")
       // Try fallback without orderBy if composite index is missing
       try {
         const fallbackSnapshot = await getDocs(collection(db, "evaluation_results"))
-        console.log("🔍 Fallback query executed. Docs count:", fallbackSnapshot.docs.length)
         const results = fallbackSnapshot.docs.map((doc) => {
           const data = doc.data()
 
@@ -604,7 +588,7 @@ export const evaluationResultsService = {
         // Use the weighted rating if we have section data, otherwise fallback to global average
         // But for consistency with the new formula, we primarily use the weighted one.
         let finalRating = totalWeightedRating
-        
+
         // If no sections matched but we have total responses, use a simple average
         if (totalWeightedRating === 0 && prof.totalResponses > 0) {
           const totalWeightedScore =
@@ -899,7 +883,6 @@ export const evaluationResultsService = {
 
       await Promise.all(deletePromises)
 
-      console.log(`Successfully cleared ${deletedCount} evaluation results`)
       return { success: true, deletedCount }
     } catch (error) {
       console.error("Error clearing evaluation results:", error)

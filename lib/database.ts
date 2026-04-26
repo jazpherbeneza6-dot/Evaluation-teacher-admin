@@ -126,7 +126,6 @@ export const departmentService = {
       // If no professors left, delete the department
       if (professorsSnapshot.empty) {
         await deleteDoc(doc(db, "departments", departmentId))
-        console.log(`Department ${departmentId} deleted as it became empty`)
       }
     } catch (error) {
       console.error("Error checking/deleting empty department:", error)
@@ -285,20 +284,17 @@ export const professorService = {
           // Update progress after each professor
           onProgress?.(j + 1, totalProfessors)
 
-          console.log(`Adding professor: ${professor.name} (${professor.email})`)
         }
 
         // Commit batch if it has operations
         if (batchOperations > 0) {
           await batch.commit()
-          console.log(`Committed batch: ${batchOperations} professors saved`)
         }
       }
 
       // Ensure progress is 100% at the end
       onProgress?.(totalProfessors, totalProfessors)
 
-      console.log(`Import complete: ${successCount} added, ${skippedCount} skipped`)
       return { success: successCount, skipped: skippedCount, errors }
     } catch (error) {
       console.error("Error importing professors:", error)
@@ -747,7 +743,6 @@ export const professorService = {
         await batch.commit()
       }
 
-      console.log(`Successfully deleted professor ${professorId} and all related data`)
 
 
       // Delete from Firebase Authentication via API endpoint (non-blocking, fire and forget)
@@ -759,7 +754,6 @@ export const professorService = {
         body: JSON.stringify({ email: professorEmail })
       }).then((response) => {
         if (response.ok) {
-          console.log(`✅ Successfully deleted from Firebase Auth: ${professorEmail}`)
         } else {
           console.warn(`⚠️ Failed to delete from Firebase Auth: ${professorEmail}`)
         }
@@ -1599,7 +1593,6 @@ export const studentService = {
             // Don't throw error - we'll still update Firestore
             // But log it so we know there's an issue
           } else {
-            console.log('Password updated in Firebase Auth successfully')
           }
         } catch (authError) {
           console.error('Error updating password in Firebase Auth:', authError)
@@ -1938,13 +1931,6 @@ export const evaluationDeadlineService = {
   // Create or update the single deadline document
   async create(startDate: Date, endDate: Date, isActive: boolean = true, semester: "1st" | "2nd" = "1st"): Promise<string> {
     try {
-      console.log("🔵 Saving deadline to Firestore:", {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        isActive,
-        semester,
-        documentId: DEADLINE_DOC_ID,
-      })
 
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
 
@@ -1952,7 +1938,6 @@ export const evaluationDeadlineService = {
       const deadlineDoc = await getDoc(deadlineRef)
       const exists = deadlineDoc.exists()
 
-      console.log("🔵 Deadline document exists:", exists)
 
       // Convert dates to Firestore Timestamp
       const startTimestamp = Timestamp.fromDate(startDate)
@@ -1967,28 +1952,17 @@ export const evaluationDeadlineService = {
         ...(exists ? {} : { createdAt: Timestamp.now() }),
       }
 
-      console.log("🔵 Deadline data to save:", {
-        startDate: startTimestamp.toDate().toISOString(),
-        endDate: endTimestamp.toDate().toISOString(),
-        semester,
-        isActive,
-      })
 
       if (exists) {
         // Update existing document - Reset evaluation results for new evaluation period
-        console.log("🔵 Updating existing deadline document...")
-        console.log("🔄 Resetting evaluation results for new evaluation period...")
 
         // Reset all evaluation results when deadline is updated
         await this.resetEvaluationResults()
 
         await updateDoc(deadlineRef, deadlineData)
-        console.log("✅ Deadline updated successfully and evaluation results reset")
       } else {
         // Create new document if it doesn't exist
-        console.log("🔵 Creating new deadline document...")
         await setDoc(deadlineRef, deadlineData)
-        console.log("✅ Deadline created successfully")
       }
 
       // Verify the save by reading it back immediately
@@ -1998,11 +1972,6 @@ export const evaluationDeadlineService = {
         const data = verifyDoc.data()
         const verifiedStart = data.startDate?.toDate?.()
         const verifiedEnd = data.endDate?.toDate?.()
-        console.log("✅ Verified saved deadline:", {
-          startDate: verifiedStart?.toISOString(),
-          endDate: verifiedEnd?.toISOString(),
-          isActive: data.isActive,
-        })
 
         // Double-check that the dates match what we tried to save
         if (verifiedStart && verifiedEnd) {
@@ -2031,12 +2000,10 @@ export const evaluationDeadlineService = {
 
   async getAll(): Promise<EvaluationDeadline[]> {
     try {
-      console.log("🔵 Fetching all deadlines from Firestore...")
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
       const deadlineDoc = await getDoc(deadlineRef)
 
       if (!deadlineDoc.exists()) {
-        console.log("🔵 No deadline document found in getAll()")
         return []
       }
 
@@ -2051,13 +2018,6 @@ export const evaluationDeadlineService = {
         updatedAt: data.updatedAt?.toDate?.() || new Date(),
       } as EvaluationDeadline
 
-      console.log("✅ Fetched deadline in getAll():", {
-        id: deadline.id,
-        startDate: deadline.startDate.toISOString(),
-        endDate: deadline.endDate.toISOString(),
-        semester: deadline.semester,
-        isActive: deadline.isActive,
-      })
 
       return [deadline]
     } catch (error) {
@@ -2072,26 +2032,18 @@ export const evaluationDeadlineService = {
 
   async getActive(): Promise<EvaluationDeadline | null> {
     try {
-      console.log("🔵 Fetching active deadline from Firestore...")
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
       const deadlineDoc = await getDoc(deadlineRef)
 
       if (!deadlineDoc.exists()) {
-        console.log("🔵 No deadline document found")
         return null
       }
 
       const data = deadlineDoc.data()
 
-      console.log("🔵 Deadline document data:", {
-        isActive: data.isActive,
-        startDate: data.startDate?.toDate?.()?.toISOString(),
-        endDate: data.endDate?.toDate?.()?.toISOString(),
-      })
 
       // Only return if isActive is true
       if (!data.isActive) {
-        console.log("🔵 Deadline is not active")
         return null
       }
 
@@ -2105,13 +2057,6 @@ export const evaluationDeadlineService = {
         updatedAt: data.updatedAt?.toDate?.() || new Date(),
       } as EvaluationDeadline
 
-      console.log("✅ Active deadline found:", {
-        id: deadline.id,
-        startDate: deadline.startDate.toISOString(),
-        endDate: deadline.endDate.toISOString(),
-        semester: deadline.semester,
-        isActive: deadline.isActive,
-      })
 
       return deadline
     } catch (error) {
@@ -2126,12 +2071,6 @@ export const evaluationDeadlineService = {
 
   async update(id: string, startDate: Date, endDate: Date, isActive: boolean, semester: "1st" | "2nd" = "1st"): Promise<void> {
     try {
-      console.log("🔵 Updating deadline via update method:", {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        semester,
-        isActive,
-      })
       // Always update the single document (ignore id parameter, use DEADLINE_DOC_ID)
       const deadlineRef = doc(db, "evaluation_deadlines", DEADLINE_DOC_ID)
       await updateDoc(deadlineRef, {
@@ -2141,7 +2080,6 @@ export const evaluationDeadlineService = {
         isActive,
         updatedAt: Timestamp.now(),
       })
-      console.log("✅ Deadline updated via update method")
     } catch (error) {
       console.error("❌ Error updating deadline:", error)
       throw error
@@ -2175,17 +2113,14 @@ export const evaluationDeadlineService = {
   // Reset all evaluation results when a new evaluation period starts
   async resetEvaluationResults(): Promise<void> {
     try {
-      console.log("🔄 Starting evaluation results reset...")
 
       // Get all evaluation results
       const resultsSnapshot = await getDocs(collection(db, "evaluation_results"))
       const batchSize = 500 // Firestore batch limit
       const results = resultsSnapshot.docs
 
-      console.log(`🔄 Found ${results.length} evaluation results to delete`)
 
       if (results.length === 0) {
-        console.log("✅ No evaluation results to reset")
         return
       }
 
@@ -2199,10 +2134,8 @@ export const evaluationDeadlineService = {
         })
 
         await batch.commit()
-        console.log(`🔄 Deleted batch ${Math.floor(i / batchSize) + 1} (${batchDocs.length} documents)`)
       }
 
-      console.log(`✅ Successfully reset ${results.length} evaluation results`)
     } catch (error) {
       console.error("❌ Error resetting evaluation results:", error)
       throw error
@@ -2273,9 +2206,9 @@ export const adminSettingsService = {
   async updateQuestionPassword(newPassword: string): Promise<void> {
     try {
       const docRef = doc(db, "settings", "admin_Question-password")
-      await setDoc(docRef, { 
-        "Question-password": newPassword, 
-        updatedAt: Timestamp.now() 
+      await setDoc(docRef, {
+        "Question-password": newPassword,
+        updatedAt: Timestamp.now()
       }, { merge: true })
     } catch (error) {
       console.error("Error updating question password:", error)

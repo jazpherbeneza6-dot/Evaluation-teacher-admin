@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: "La Concepcion College - Teacher Evaluation System",
   description:
     "Modern teacher evaluation and management platform for La Concepcion College - Changing Lives for the Better",
-  
+
 }
 
 export default function RootLayout({
@@ -68,7 +68,7 @@ export default function RootLayout({
           </Suspense>
         </ErrorBoundary>
         <Toaster />
-        <Analytics />
+        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )
